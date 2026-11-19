@@ -20,20 +20,19 @@ function readAllTsx(dir: string): string[] {
 
 describe("Design System Compliance", () => {
   // Test 1: No rounded corners — no rounded-* classes except rounded-md (which is 0px)
-  it("no non-zero border-radius in any component", () => {
+  it("uses the friendly radius scale and no ad-hoc inline radii", () => {
     const config = readFileSync(resolve(__dirname, "../tailwind.config.ts"), "utf-8");
     const radiusMatch = config.match(/borderRadius:\s*\{([^}]+)\}/);
     expect(radiusMatch).not.toBeNull();
 
-    // All radius values are 0px (except `full: "9999px"` for stamp circles)
     const pairs = [...radiusMatch![1]!.matchAll(/(\w+):\s*"([^"]+)"/g)];
-    for (const [, key, value] of pairs) {
-      if (key === "full") {
-        expect(value).toBe("9999px");
-      } else {
-        expect(value).toBe("0px");
-      }
-    }
+    // Friendly theme: a real radius scale — `none` stays 0, `full` is a pill, the rest are small, increasing radii.
+    const scale = Object.fromEntries(pairs.map(([, key, value]) => [key, value]));
+    expect(scale["none"]).toBe("0px");
+    expect(scale["full"]).toBe("9999px");
+    const steps = ["sm", "DEFAULT", "lg", "xl"].map((k) => parseInt(scale[k] ?? "0", 10));
+    for (const px of steps) expect(px).toBeGreaterThan(0);
+    for (let i = 1; i < steps.length; i++) expect(steps[i]).toBeGreaterThanOrEqual(steps[i - 1]!);
 
     // No inline borderRadius in source files
     const allSource = readAllTsx(COMPONENTS_DIR);

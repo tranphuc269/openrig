@@ -91,7 +91,7 @@ export function RigStatusCard({
       className="bg-surface-lowest border border-stone-900 dark:border-outline hard-shadow relative"
     >
       {/* Dark header stripe — vellum grammar (matches RigCard). */}
-      <div className="bg-stone-900 text-white px-4 py-1.5 font-mono text-[10px] flex justify-between items-center">
+      <div className="bg-surface-low text-on-surface-variant border-b border-outline-variant rounded-t-xl px-4 py-2 font-mono text-[12px] font-medium flex justify-between items-center">
         <span>{isKernel ? "KERNEL RIG" : `RIG: ${rigName.toUpperCase()}`}</span>
         {isKernel ? <Hexagon className="h-3 w-3" /> : <Server className="h-3 w-3" />}
       </div>

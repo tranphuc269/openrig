@@ -16,6 +16,13 @@ export default defineConfig({
       "/api": {
         target: daemonUrl,
         changeOrigin: true,
+        // Dev only: the daemon accepts browser writes only from its own UI origin, so present the
+        // proxied request as coming from the daemon's address instead of the Vite port.
+        configure: (proxy) => {
+          proxy.on("proxyReq", (proxyReq) => {
+            if (proxyReq.getHeader("origin")) proxyReq.setHeader("origin", new URL(daemonUrl).origin);
+          });
+        },
       },
       "/healthz": {
         target: daemonUrl,

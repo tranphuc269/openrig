@@ -14,11 +14,12 @@ describe("VellumCard (Phase 1 primitive)", () => {
     expect(screen.getByText("HELLO")).toBeTruthy();
   });
 
-  it("default container carries vellum classes (bg-white + border-stone-900 + hard-shadow)", () => {
+  it("default container is a rounded card with a soft border and shadow (friendly theme)", () => {
     const { container } = render(<VellumCard testId="vc">x</VellumCard>);
     const el = container.querySelector("[data-testid='vc']") as HTMLElement;
     expect(el.className).toContain("bg-surface-lowest");
-    expect(el.className).toContain("border-on-surface");
+    expect(el.className).toContain("border-outline-variant");
+    expect(el.className).toContain("rounded-xl");
     expect(el.className).toContain("hard-shadow");
   });
 

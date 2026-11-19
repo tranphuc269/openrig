@@ -91,6 +91,7 @@ import type { PluginDiscoveryService } from "./domain/plugin-discovery-service.j
 // Slice 28 Checkpoint C-3 — skill-library discovery routes (read-only).
 // SC-29 EXCEPTION #11 cumulative; full declaration in routes/plugins.ts header.
 import { skillsRoutes } from "./routes/skills.js";
+import { factoryRoutes } from "./routes/factory.js";
 import type { SkillLibraryDiscoveryService } from "./domain/skill-library-discovery.js";
 import { configRoutes } from "./routes/config.js";
 import { hostsRoutes } from "./routes/hosts.js";
@@ -878,6 +879,28 @@ export function createApp(deps: AppDeps): Hono {
   app.route("/api/plugins", pluginsRoutes());
   // Slice 28 C-3 — skill-library + per-skill file endpoints (SC-29 #11).
   app.route("/api/skills", skillsRoutes());
+  // Factory Studio — team builder (writes RigSpecs under $OPENRIG_HOME/specs/factory) and
+  // Agent Workspace runs, which launch and message teams through this app's own routes.
+  app.route("/api/factory", factoryRoutes({
+    dispatch: async (method, apiPath, body) => {
+      const headers: Record<string, string> = { accept: "application/json" };
+      if (body !== undefined) headers["content-type"] = "application/json";
+      if (deps.terminalBearerToken) headers["authorization"] = `Bearer ${deps.terminalBearerToken}`;
+      const res = await app.request(`http://localhost${apiPath}`, {
+        method,
+        headers,
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+      const raw = await res.text();
+      let data: unknown = raw;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        // Non-JSON bodies are passed through as text.
+      }
+      return { status: res.status, data };
+    },
+  }));
   app.route("/api/config", configRoutes());
   app.route("/api/context-packs", contextPacksRoutes());
   app.route("/api/agent-images", agentImagesRoutes({

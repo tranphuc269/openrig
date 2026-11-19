@@ -25,14 +25,15 @@ describe("Tailwind Foundation", () => {
     const root = document.documentElement;
     const styles = getComputedStyle(root);
 
-    expect(styles.getPropertyValue("--background").trim()).toContain("47 20% 97%");
-    expect(styles.getPropertyValue("--on-surface").trim()).toContain("120 8% 19%");
-    expect(styles.getPropertyValue("--primary").trim()).toContain("0 1% 37%");
-    expect(styles.getPropertyValue("--tertiary").trim()).toContain("1 63% 42%");
+    // Friendly theme palette (cool neutrals + indigo accent).
+    expect(styles.getPropertyValue("--background").trim()).toContain("228 33% 97%");
+    expect(styles.getPropertyValue("--on-surface").trim()).toContain("221 39% 11%");
+    expect(styles.getPropertyValue("--primary").trim()).toContain("243 75% 59%");
+    expect(styles.getPropertyValue("--tertiary").trim()).toContain("0 72% 51%");
   });
 
   // Test 2: ALL borderRadius tokens zeroed in config
-  it("ALL borderRadius tokens are 0px", () => {
+  it("borderRadius tokens form the friendly radius scale", () => {
     const config = readFileSync(resolve(__dirname, "../tailwind.config.ts"), "utf-8");
 
     const radiusMatch = config.match(/borderRadius:\s*\{([^}]+)\}/);
@@ -40,13 +41,13 @@ describe("Tailwind Foundation", () => {
 
     const pairs = [...radiusMatch![1]!.matchAll(/(\w+):\s*"([^"]+)"/g)];
     expect(pairs.length).toBeGreaterThanOrEqual(6);
-    for (const [, key, value] of pairs) {
-      if (key === "full") {
-        expect(value).toBe("9999px");
-      } else {
-        expect(value).toBe("0px");
-      }
-    }
+    // Friendly theme: a real radius scale — `none` stays 0, `full` is a pill, the rest are small, increasing radii.
+    const scale = Object.fromEntries(pairs.map(([, key, value]) => [key, value]));
+    expect(scale["none"]).toBe("0px");
+    expect(scale["full"]).toBe("9999px");
+    const steps = ["sm", "DEFAULT", "lg", "xl"].map((k) => parseInt(scale[k] ?? "0", 10));
+    for (const px of steps) expect(px).toBeGreaterThan(0);
+    for (let i = 1; i < steps.length; i++) expect(steps[i]).toBeGreaterThanOrEqual(steps[i - 1]!);
   });
 
   // Test 3: cn() utility

@@ -13,7 +13,7 @@ export const MISSION_CONTROL_VERBS = [
 ] as const;
 
 export type MissionControlVerb = (typeof MISSION_CONTROL_VERBS)[number];
-export type MissionControlActionVerb = MissionControlVerb | "answer";
+export type MissionControlActionVerb = MissionControlVerb | "answer" | "resolve";
 
 export interface MissionControlActionInput {
   verb: MissionControlActionVerb;

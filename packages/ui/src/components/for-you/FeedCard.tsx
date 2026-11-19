@@ -34,6 +34,7 @@ import type { MissionControlVerb } from "../mission-control/hooks/useMissionCont
 import { ACTION_VERB_META, actionVerbToken } from "../mission-control/action-verb-meta.js";
 import { ActorMark } from "../graphics/RuntimeMark.js";
 import { cn } from "../../lib/utils.js";
+import { ReplyToAgent } from "../reply/ReplyToAgent.js";
 
 /**
  * Vellum-coherent kind indicator. Mono uppercase tag + leading colored
@@ -383,6 +384,7 @@ export function FeedCard({
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
   // CORRECTIVE §7.1 — CHAT quick-action state (the shared terminal, per BR-12).
   const [chatOpen, setChatOpen] = useState(false);
+  const [replyOpen, setReplyOpen] = useState(false);
   const dragStateRef = useRef<{ startX: number; pointerId: number; isTouch: boolean } | null>(null);
 
   const handleKeyDown: React.KeyboardEventHandler<HTMLElement> = (event) => {
@@ -446,6 +448,10 @@ export function FeedCard({
   const source = qitemViewerData?.source ?? card.authorSession;
   const destination = qitemViewerData?.destination;
   const actorSession = destination?.startsWith("human") ? destination : "human@host";
+  // Reply in your own words (the TUI's `reply`): an ask to a person is answered, a task parked on a person is resolved.
+  const replyVerb: "answer" | "resolve" = localItem?.state === "blocked" ? "resolve" : "answer";
+  // Asks with structured questions are answered with their options (or in the TUI when they can't be read here).
+  const canReply = questionsKnown && !isRunnerPermission && !hasQuestions;
   const renderedOutcome = actionOutcome ?? (hasQuestionControls ? null : fallbackOutcomeFromQueueItem(card.kind, queueItem));
   const primaryToken = renderedOutcome ? outcomeToken(renderedOutcome) : KIND_TOKEN[card.kind];
   const primaryDotClass = renderedOutcome
@@ -610,6 +616,17 @@ export function FeedCard({
                     : `This ask has questions. Answer in the TUI (rig tui)${terminalSession ? `, or tell ${terminalSession} in Chat.` : "."}`}
                 </span>
               ) : null}
+              {canReply ? (
+                <button
+                  type="button"
+                  data-testid={`feed-card-reply-${card.id}`}
+                  aria-expanded={replyOpen}
+                  onClick={() => setReplyOpen((v) => !v)}
+                  className="border border-outline px-3 py-1 font-mono text-[11px] uppercase hover:bg-surface-variant"
+                >
+                  ✎ Reply
+                </button>
+              ) : null}
               <button
                 type="button"
                 data-testid={`feed-card-chat-${card.id}`}
@@ -621,6 +638,18 @@ export function FeedCard({
                 ⌨ Chat
               </button>
             </div>
+            {replyOpen && canReply ? (
+              <div className="mt-3">
+                <ReplyToAgent
+                  testId={`feed-card-reply-box-${card.id}`}
+                  qitemId={qitemViewerData.qitemId}
+                  actorSession={actorSession}
+                  verb={replyVerb}
+                  hostId={card.hostId}
+                  askerLabel={source ?? undefined}
+                />
+              </div>
+            ) : null}
             {chatOpen && terminalSession ? (
               <div className="mt-2 border border-outline-variant">
                 <ProgressiveTerminal

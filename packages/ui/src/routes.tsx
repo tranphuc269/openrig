@@ -48,6 +48,11 @@ import { PluginsIndexPage } from "./components/specs/PluginsIndexPage.js";
 // Phase 3a slice 3.3 — plugin detail page route.
 import { PluginDetailPage } from "./components/specs/PluginDetailPage.js";
 import { FilesWorkspace } from "./components/files/FilesWorkspace.js";
+import { StudioPage } from "./components/factory/StudioPage.js";
+import { TeamBuilder } from "./components/factory/TeamBuilder.js";
+import { WorkspacePage as AgentWorkspacePage, NewTaskPage } from "./components/workspace/WorkspacePage.js";
+import { RunPage } from "./components/workspace/RunPage.js";
+import { UsagePage } from "./components/usage/UsagePage.js";
 import { SettingsCenter } from "./components/system/SettingsCenter.js";
 import { PoliciesPage } from "./components/system/PoliciesPage.js";
 import { LogPage } from "./components/system/LogPage.js";
@@ -299,6 +304,55 @@ const settingsStatusRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/status",
   component: StatusPage,
+});
+
+// Factory Studio — team builder.
+const studioRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/studio",
+  component: StudioPage,
+});
+const studioNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/studio/new",
+  component: () => <TeamBuilder />,
+});
+const studioTeamRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/studio/teams/$teamName",
+  component: () => {
+    const { teamName } = useParams({ from: "/studio/teams/$teamName" });
+    return <TeamBuilder key={teamName} teamName={teamName} />;
+  },
+});
+
+// Usage & cost — plan limits and per-agent cost.
+const usageRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/usage",
+  component: UsagePage,
+});
+
+// Agent Workspace — give tasks to Factory Studio teams and review their outputs.
+const agentWorkspaceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/workspace",
+  component: AgentWorkspacePage,
+});
+const agentWorkspaceNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/workspace/new",
+  validateSearch: (search: Record<string, unknown>): { team?: string } =>
+    typeof search.team === "string" ? { team: search.team } : {},
+  component: NewTaskPage,
+});
+const agentWorkspaceRunRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/workspace/runs/$runId",
+  component: () => {
+    const { runId } = useParams({ from: "/workspace/runs/$runId" });
+    return <RunPage key={runId} runId={runId} />;
+  },
 });
 
 const searchRoute = createRoute({
@@ -561,6 +615,13 @@ export const routeTree = rootRoute.addChildren([
   filesRoute,
   specsKindRoute,
   settingsRoute,
+  studioRoute,
+  studioNewRoute,
+  studioTeamRoute,
+  agentWorkspaceRoute,
+  agentWorkspaceNewRoute,
+  agentWorkspaceRunRoute,
+  usageRoute,
   settingsPoliciesRoute,
   settingsLogRoute,
   settingsStatusRoute,

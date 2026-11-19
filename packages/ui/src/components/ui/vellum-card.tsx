@@ -20,8 +20,8 @@ export interface VellumCardProps extends React.HTMLAttributes<HTMLElement> {
 }
 
 const variantSurface: Record<VellumCardVariant, string> = {
-  primary: "bg-surface-lowest border border-on-surface",
-  ghost: "bg-transparent border border-outline-variant",
+  primary: "rounded-xl bg-surface-lowest border border-outline-variant",
+  ghost: "rounded-xl bg-transparent border border-outline-variant",
 };
 
 const elevationShadow: Record<VellumCardElevation, string> = {

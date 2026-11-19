@@ -5,6 +5,7 @@ import "@fontsource/inter/700.css";
 import "@fontsource-variable/space-grotesk";
 import "@fontsource-variable/jetbrains-mono";
 import "./globals.css";
+import "./components/factory/friendly.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

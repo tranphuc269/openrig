@@ -94,14 +94,15 @@ describe("shadcn components", () => {
   });
 
   // Test 5: Card uses white bg with hard-shadow (vellum theme)
-  it("Card uses bg-white border border-stone-900 hard-shadow", async () => {
+  it("Card is a rounded surface with a soft border and shadow (friendly theme)", async () => {
     const { Card } = await import("../src/components/ui/card.js");
 
     render(<Card data-testid="card">content</Card>);
 
     const card = screen.getByTestId("card");
     expect(card.className).toContain("bg-surface-lowest");
-    expect(card.className).toContain("border-on-surface");
+    expect(card.className).toContain("border-outline-variant");
+    expect(card.className).toContain("rounded-xl");
     expect(card.className).toContain("hard-shadow");
   });
 

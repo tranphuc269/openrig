@@ -94,9 +94,8 @@ describe("globals.css registration-mark CSS source (DRIFT-2 regression)", () => 
     });
   }
 
-  it("paper-grid radial-gradient uses 1px dot radius (DRIFT-3)", () => {
-    expect(GLOBALS_CSS).toMatch(
-      /radial-gradient\(#d1d1cf\s+1px,\s*transparent\s+1px\)/,
-    );
+  // Friendly theme: the paper dot-grid texture on <body> is gone (plain app background).
+  it("body has no paper-grid dot texture (friendly theme)", () => {
+    expect(GLOBALS_CSS).not.toMatch(/radial-gradient\(#d1d1cf/);
   });
 });

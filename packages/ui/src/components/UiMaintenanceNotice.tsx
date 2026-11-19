@@ -29,14 +29,14 @@ export function UiMaintenanceNotice() {
 
   return (
     <div
-      className="shrink-0 flex items-start justify-between gap-3 border-b border-amber-500/40 bg-amber-50 px-4 py-2 text-sm text-amber-950 shadow-sm dark:bg-amber-950 dark:text-amber-50"
+      className="shrink-0 flex items-center justify-between gap-3 border-b border-outline-variant bg-secondary-container px-4 py-1.5 text-[13px] text-on-surface-variant"
       data-testid="ui-maintenance-notice"
       role="status"
     >
       <span>{UI_MAINTENANCE_NOTICE}</span>
       <button
         aria-label="Dismiss maintenance notice"
-        className="shrink-0 rounded px-1.5 font-semibold hover:bg-amber-200/60 dark:hover:bg-amber-900"
+        className="shrink-0 rounded-md px-1.5 font-semibold hover:bg-surface-high"
         onClick={dismiss}
         type="button"
       >

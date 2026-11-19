@@ -7,16 +7,17 @@ const config: Config = {
   // (globals.css `.dark {}`), not per-utility; this enables `dark:` where used.
   darkMode: "selector",
   theme: {
+    // Friendly theme: a real radius scale (the old "tactical" theme forced every radius to 0).
     borderRadius: {
       none: "0px",
-      sm: "0px",
-      DEFAULT: "0px",
-      md: "0px",
-      lg: "0px",
-      xl: "0px",
-      "2xl": "0px",
-      "3xl": "0px",
-      full: "9999px", /* Exception: stamp circles only */
+      sm: "6px",
+      DEFAULT: "8px",
+      md: "8px",
+      lg: "10px",
+      xl: "14px",
+      "2xl": "18px",
+      "3xl": "24px",
+      full: "9999px",
     },
     extend: {
       colors: {
@@ -75,9 +76,12 @@ const config: Config = {
         muted: { DEFAULT: "hsl(var(--muted))", foreground: "hsl(var(--muted-foreground))" },
       },
       fontFamily: {
-        headline: ["Space Grotesk Variable", "Space Grotesk", "sans-serif"],
+        // Friendly theme: UI text is Inter everywhere. `font-mono` was used for most UI labels,
+        // so it now maps to Inter too; real code uses `font-code` (and <code>/<pre> in CSS).
+        headline: ["Inter", "system-ui", "sans-serif"],
         body: ["Inter", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono Variable", "JetBrains Mono", "monospace"],
+        mono: ["Inter", "system-ui", "sans-serif"],
+        code: ["JetBrains Mono Variable", "JetBrains Mono", "ui-monospace", "monospace"],
         /* Legacy aliases */
         inter: ["Inter", "system-ui", "sans-serif"],
         grotesk: ["Space Grotesk Variable", "Space Grotesk", "sans-serif"],
@@ -95,8 +99,8 @@ const config: Config = {
       },
       fontSize: {
         "display-lg": ["3.5rem", { lineHeight: "1.1", fontWeight: "900", letterSpacing: "-0.02em" }],
-        "headline-lg": ["2rem", { lineHeight: "1.2", fontWeight: "800", letterSpacing: "-0.01em" }],
-        "headline-md": ["1.5rem", { lineHeight: "1.3", fontWeight: "800", letterSpacing: "-0.01em" }],
+        "headline-lg": ["2rem", { lineHeight: "1.2", fontWeight: "700", letterSpacing: "-0.02em" }],
+        "headline-md": ["1.5rem", { lineHeight: "1.3", fontWeight: "700", letterSpacing: "-0.02em" }],
         "body-lg": ["1.125rem", { lineHeight: "1.5", fontWeight: "400" }],
         "body-md": ["1rem", { lineHeight: "1.5", fontWeight: "400" }],
         "body-sm": ["0.875rem", { lineHeight: "1.5", fontWeight: "400" }],
@@ -108,6 +112,12 @@ const config: Config = {
         tactical: "cubic-bezier(0.2, 0, 0, 1)",
       },
     },
+  },
+  // Friendly theme: no ALL-CAPS labels and no wide letter-spacing anywhere. Disabling the
+  // plugins drops every uppercase/tracking-* utility (arbitrary values included) at build time.
+  corePlugins: {
+    textTransform: false,
+    letterSpacing: false,
   },
   plugins: [],
 };

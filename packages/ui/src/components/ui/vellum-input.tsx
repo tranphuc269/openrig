@@ -12,7 +12,7 @@ export const VellumInput = React.forwardRef<HTMLInputElement, VellumInputProps>(
         ref={ref}
         data-testid={testId}
         className={cn(
-          "block w-full border border-outline-variant bg-surface-lowest px-2 py-1 font-mono text-xs text-on-surface",
+          "block w-full rounded-lg border border-outline-variant bg-surface-lowest px-2.5 py-1.5 font-mono text-xs text-on-surface",
           "hover:bg-background focus:border-on-surface focus:bg-surface-lowest focus:outline-none",
           "disabled:bg-surface-low disabled:text-on-surface-variant disabled:cursor-not-allowed",
           className,

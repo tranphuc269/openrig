@@ -1,0 +1,364 @@
+/* Factory Studio + Agent Workspace — "friendly" design kit.
+ *
+ * A soft, modern look (white cards, rounded corners, soft shadows, Inter,
+ * indigo accent) scoped to `.fx` page roots and to the app shell while it
+ * shows those pages (`[data-friendly]`). The rest of OpenRig keeps its theme.
+ * Light and dark tokens; dark follows the app's `.dark` class on <html>.
+ */
+
+.fx,
+[data-friendly] {
+  --fx-bg: #f6f7fb;
+  --fx-surface: #ffffff;
+  --fx-surface-2: #f3f4f8;
+  --fx-surface-3: #eceef4;
+  --fx-border: #e5e7ef;
+  --fx-border-strong: #d1d5e0;
+  --fx-text: #111827;
+  --fx-muted: #5b6474;
+  --fx-subtle: #8f97a6;
+  --fx-primary: #4f46e5;
+  --fx-primary-hover: #4338ca;
+  --fx-primary-soft: #eef0ff;
+  --fx-primary-text: #4338ca;
+  --fx-on-primary: #ffffff;
+  --fx-success: #047857;
+  --fx-success-soft: #e8f8f1;
+  --fx-warning: #b45309;
+  --fx-warning-soft: #fff6e5;
+  --fx-danger: #c62828;
+  --fx-danger-soft: #fdeeee;
+  --fx-info: #0369a1;
+  --fx-info-soft: #e9f5fd;
+  --fx-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --fx-shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.05);
+  --fx-shadow-lg: 0 8px 28px rgba(16, 24, 40, 0.1);
+  --fx-ring: 0 0 0 3px rgba(79, 70, 229, 0.18);
+  --fx-code-bg: #f3f4f8;
+  --fx-terminal-bg: #0f1220;
+  --fx-terminal-text: #e3e6f0;
+}
+
+.dark .fx,
+.dark [data-friendly],
+.dark.fx,
+.dark[data-friendly] {
+  --fx-bg: #0e1016;
+  --fx-surface: #161922;
+  --fx-surface-2: #1c202b;
+  --fx-surface-3: #242938;
+  --fx-border: #272c3a;
+  --fx-border-strong: #353b4d;
+  --fx-text: #e8eaf1;
+  --fx-muted: #a1a8b8;
+  --fx-subtle: #737b8c;
+  --fx-primary: #818cf8;
+  --fx-primary-hover: #a5b4fc;
+  --fx-primary-soft: rgba(129, 140, 248, 0.14);
+  --fx-primary-text: #a5b4fc;
+  --fx-on-primary: #0e1016;
+  --fx-success: #34d399;
+  --fx-success-soft: rgba(52, 211, 153, 0.12);
+  --fx-warning: #fbbf24;
+  --fx-warning-soft: rgba(251, 191, 36, 0.12);
+  --fx-danger: #f87171;
+  --fx-danger-soft: rgba(248, 113, 113, 0.12);
+  --fx-info: #38bdf8;
+  --fx-info-soft: rgba(56, 189, 248, 0.12);
+  --fx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --fx-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), 0 4px 12px rgba(0, 0, 0, 0.25);
+  --fx-shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --fx-ring: 0 0 0 3px rgba(129, 140, 248, 0.3);
+  --fx-code-bg: #1c202b;
+  --fx-terminal-bg: #0a0c12;
+}
+
+/* ── Page root ─────────────────────────────────────────────── */
+.fx {
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--fx-text);
+  background: var(--fx-bg);
+  min-height: 100%;
+  flex: 1 1 auto;
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: normal;
+}
+.fx code,
+.fx .fx-mono {
+  font-family: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.86em;
+}
+.fx code:not(pre code) {
+  background: var(--fx-code-bg);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+
+/* ── Typography ────────────────────────────────────────────── */
+.fx-eyebrow { font-size: 12px; font-weight: 600; color: var(--fx-primary-text); }
+.fx-h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; color: var(--fx-text); }
+.fx-h2 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; color: var(--fx-text); }
+.fx-h3 { font-size: 14px; font-weight: 600; color: var(--fx-text); }
+.fx-sub { font-size: 14px; color: var(--fx-muted); }
+.fx-small { font-size: 12.5px; color: var(--fx-muted); }
+.fx-tiny { font-size: 11.5px; color: var(--fx-subtle); }
+.fx-link { color: var(--fx-primary-text); font-weight: 500; }
+.fx-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ── Surfaces ──────────────────────────────────────────────── */
+.fx-card {
+  background: var(--fx-surface);
+  border: 1px solid var(--fx-border);
+  border-radius: 14px;
+  box-shadow: var(--fx-shadow-sm);
+}
+.fx-card-hover { transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease; }
+.fx-card-hover:hover { box-shadow: var(--fx-shadow); border-color: var(--fx-border-strong); transform: translateY(-1px); }
+.fx-card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 14px 18px; border-bottom: 1px solid var(--fx-border);
+}
+.fx-card-body { padding: 18px; }
+.fx-inset { background: var(--fx-surface-2); border-radius: 10px; }
+.fx-divider { border-top: 1px solid var(--fx-border); }
+
+/* ── Buttons ───────────────────────────────────────────────── */
+.fx-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 36px; padding: 0 14px; border-radius: 10px;
+  font-size: 13.5px; font-weight: 500; line-height: 1; white-space: nowrap;
+  border: 1px solid transparent; cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+.fx-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+.fx-btn:focus-visible { outline: none; box-shadow: var(--fx-ring); }
+.fx-btn:disabled, .fx-btn[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
+.fx-btn-sm { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; }
+.fx-btn-sm svg { width: 14px; height: 14px; }
+.fx-btn-icon { width: 32px; padding: 0; }
+.fx-btn-primary { background: var(--fx-primary); color: var(--fx-on-primary); box-shadow: var(--fx-shadow-sm); }
+.fx-btn-primary:hover { background: var(--fx-primary-hover); }
+.fx-btn-secondary { background: var(--fx-surface); color: var(--fx-text); border-color: var(--fx-border-strong); box-shadow: var(--fx-shadow-sm); }
+.fx-btn-secondary:hover { background: var(--fx-surface-2); }
+.fx-btn-ghost { background: transparent; color: var(--fx-muted); }
+.fx-btn-ghost:hover { background: var(--fx-surface-2); color: var(--fx-text); }
+.fx-btn-danger { background: var(--fx-surface); color: var(--fx-danger); border-color: var(--fx-border-strong); }
+.fx-btn-danger:hover { background: var(--fx-danger-soft); border-color: var(--fx-danger); }
+.fx-btn-success { background: var(--fx-success); color: #fff; }
+.fx-btn-success:hover { filter: brightness(1.08); }
+
+/* ── Form controls ─────────────────────────────────────────── */
+.fx-label { font-size: 13px; font-weight: 500; color: var(--fx-text); }
+.fx-hint { font-size: 12px; color: var(--fx-subtle); line-height: 1.45; }
+.fx-input {
+  width: 100%; background: var(--fx-surface); color: var(--fx-text);
+  border: 1px solid var(--fx-border-strong); border-radius: 10px;
+  padding: 8px 12px; font-size: 14px; line-height: 1.45;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.fx-input::placeholder { color: var(--fx-subtle); }
+.fx-input:focus { outline: none; border-color: var(--fx-primary); box-shadow: var(--fx-ring); }
+.fx-input:disabled { background: var(--fx-surface-2); color: var(--fx-muted); }
+textarea.fx-input { resize: vertical; min-height: 96px; }
+select.fx-input { padding-right: 32px; }
+
+/* Segmented control */
+.fx-segment { display: inline-flex; padding: 3px; gap: 2px; background: var(--fx-surface-2); border-radius: 10px; border: 1px solid var(--fx-border); }
+.fx-segment button { padding: 6px 12px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--fx-muted); }
+.fx-segment button[aria-pressed="true"] { background: var(--fx-surface); color: var(--fx-text); box-shadow: var(--fx-shadow-sm); }
+
+/* Tabs */
+.fx-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--fx-border); }
+.fx-tab {
+  position: relative; display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 12px; font-size: 13.5px; font-weight: 500; color: var(--fx-muted);
+}
+.fx-tab svg { width: 15px; height: 15px; }
+.fx-tab:hover { color: var(--fx-text); }
+.fx-tab[aria-selected="true"] { color: var(--fx-primary-text); }
+.fx-tab[aria-selected="true"]::after {
+  content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px;
+  border-radius: 2px; background: var(--fx-primary);
+}
+.fx-count { display: inline-flex; min-width: 20px; height: 20px; padding: 0 6px; align-items: center; justify-content: center; border-radius: 999px; background: var(--fx-surface-3); color: var(--fx-muted); font-size: 11.5px; font-weight: 600; }
+
+/* ── Pills / badges ────────────────────────────────────────── */
+.fx-pill {
+  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px;
+  border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap;
+  background: var(--fx-surface-3); color: var(--fx-muted);
+}
+.fx-pill-dot::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+.fx-pill-pulse::before { animation: fx-pulse 1.6s ease-in-out infinite; }
+.fx-tone-primary { background: var(--fx-primary-soft); color: var(--fx-primary-text); }
+.fx-tone-success { background: var(--fx-success-soft); color: var(--fx-success); }
+.fx-tone-warning { background: var(--fx-warning-soft); color: var(--fx-warning); }
+.fx-tone-danger { background: var(--fx-danger-soft); color: var(--fx-danger); }
+.fx-tone-info { background: var(--fx-info-soft); color: var(--fx-info); }
+@keyframes fx-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* ── Alerts ────────────────────────────────────────────────── */
+.fx-alert { display: flex; gap: 10px; padding: 12px 14px; border-radius: 12px; font-size: 13.5px; line-height: 1.5; }
+.fx-alert svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
+
+/* ── Avatars ───────────────────────────────────────────────── */
+.fx-avatar {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 34px; height: 34px; border-radius: 10px; font-size: 13px; font-weight: 600; color: #fff;
+}
+.fx-avatar-sm { width: 26px; height: 26px; border-radius: 8px; font-size: 11px; }
+.fx-avatar-lg { width: 44px; height: 44px; border-radius: 12px; font-size: 16px; }
+.fx-av-0 { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+.fx-av-1 { background: linear-gradient(135deg, #0ea5e9, #6366f1); }
+.fx-av-2 { background: linear-gradient(135deg, #10b981, #0ea5e9); }
+.fx-av-3 { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+.fx-av-4 { background: linear-gradient(135deg, #ec4899, #8b5cf6); }
+.fx-av-5 { background: linear-gradient(135deg, #14b8a6, #22c55e); }
+
+/* ── Lists / selectable rows ───────────────────────────────── */
+.fx-row {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  padding: 8px 10px; border-radius: 10px; border: 1px solid transparent;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.fx-row:hover { background: var(--fx-surface-2); }
+.fx-row[aria-selected="true"], .fx-row[aria-pressed="true"] { background: var(--fx-primary-soft); border-color: color-mix(in srgb, var(--fx-primary) 35%, transparent); }
+
+.fx-check {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 18px; height: 18px; border-radius: 6px; border: 1.5px solid var(--fx-border-strong); background: var(--fx-surface);
+}
+.fx-check[data-on="true"] { background: var(--fx-primary); border-color: var(--fx-primary); color: var(--fx-on-primary); }
+.fx-check svg { width: 12px; height: 12px; }
+
+.fx-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center;
+  padding: 40px 20px; border: 1.5px dashed var(--fx-border-strong); border-radius: 14px; color: var(--fx-muted);
+}
+.fx-empty-icon {
+  display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px;
+  border-radius: 14px; background: var(--fx-primary-soft); color: var(--fx-primary-text);
+}
+.fx-empty-icon svg { width: 24px; height: 24px; }
+
+/* ── Progress ──────────────────────────────────────────────── */
+.fx-progress { position: relative; height: 8px; border-radius: 999px; background: var(--fx-surface-3); overflow: hidden; }
+.fx-progress > span { position: absolute; inset: 0 auto 0 0; border-radius: 999px; transition: width 0.4s ease; }
+
+/* ── Code / terminal blocks ────────────────────────────────── */
+.fx-pre {
+  background: var(--fx-code-bg); border: 1px solid var(--fx-border); border-radius: 12px;
+  padding: 14px; font-family: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace; font-size: 12px; line-height: 1.6; color: var(--fx-text);
+}
+.fx-terminal {
+  background: var(--fx-terminal-bg); color: var(--fx-terminal-text); border-radius: 12px;
+  padding: 14px; font-family: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace; font-size: 12px; line-height: 1.5;
+}
+
+/* Rendered documents: soften the app's markdown viewer inside friendly pages. */
+.fx-doc { font-family: "Inter", system-ui, sans-serif; }
+.fx-doc h1, .fx-doc h2, .fx-doc h3 { font-family: "Inter", system-ui, sans-serif !important; text-transform: none !important; letter-spacing: -0.01em !important; }
+.fx-doc table { border-radius: 10px; overflow: hidden; }
+
+/* ── App shell while a friendly page is open ───────────────── */
+[data-friendly] [data-testid="app-topbar"] {
+  background: var(--fx-surface);
+  border-color: var(--fx-border);
+}
+[data-friendly] [data-testid="app-rail"] {
+  background: var(--fx-surface);
+  border-color: var(--fx-border);
+  padding-left: 6px;
+  padding-right: 6px;
+  width: auto;
+}
+[data-friendly] [data-testid="app-rail"] a {
+  border-radius: 10px;
+  color: var(--fx-muted);
+}
+[data-friendly] [data-testid="app-rail"] a:hover { background: var(--fx-surface-2); color: var(--fx-text); }
+[data-friendly] [data-testid="app-rail"] a[data-active="true"] {
+  background: var(--fx-primary-soft);
+  color: var(--fx-primary-text);
+}
+[data-friendly] [data-testid="app-rail"] a[data-active="true"] > span[aria-hidden="true"] { display: none; }
+[data-friendly] [data-testid="app-rail"] a svg { stroke-width: 1.75; }
+[data-friendly] [data-testid="content-area"] { background: var(--fx-bg); }
+
+/* ══════════════════════════════════════════════════════════════
+ * App-wide friendly theme
+ * Softens the old "tactical terminal" look for every OpenRig screen
+ * without rewriting each component: code-only monospace, readable
+ * small text, rounded soft cards, no blueprint marks.
+ * ══════════════════════════════════════════════════════════════ */
+
+/* Monospace only for real code. `font-mono` is Inter now (tailwind config). */
+code, kbd, samp, pre, .font-code, .xterm {
+  font-family: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Labels that were 8–11px mono caps become readable sentence-case text. */
+:root .text-\[8px\] { font-size: 10.5px; }
+:root .text-\[9px\] { font-size: 11px; }
+:root .text-\[10px\] { font-size: 12px; }
+:root .text-\[11px\] { font-size: 12.5px; }
+:root .text-\[12px\] { font-size: 13px; }
+
+/* Cards: the hard 2px offset "ink" shadow becomes a soft elevation with rounded corners. */
+.hard-shadow,
+.dark .hard-shadow {
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 2px 8px rgba(16, 24, 40, 0.04);
+  border-radius: 14px;
+}
+.dark .hard-shadow { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 14px rgba(0, 0, 0, 0.25); }
+.hard-shadow-hover:hover,
+.dark .hard-shadow-hover:hover { box-shadow: 0 4px 18px rgba(16, 24, 40, 0.1); }
+
+/* Translucent "vellum" sheets become calm solid surfaces. */
+.vellum { background: hsl(var(--surface-container-lowest) / 0.92); }
+.vellum-heavy { background: hsl(var(--surface-container-lowest) / 0.97); }
+.dark .vellum { background: hsl(var(--surface-container-lowest) / 0.92); }
+.dark .vellum-heavy { background: hsl(var(--surface-container-lowest) / 0.97); }
+
+/* Blueprint decorations off: registration crosshairs and rubber-stamp watermarks. */
+.reg-tl, .reg-tr, .reg-bl, .reg-br,
+.reg-mark::before, .reg-mark::after { display: none !important; }
+.stamp-watermark { display: none !important; }
+.stamp-badge { border-radius: 999px; font-family: "Inter", system-ui, sans-serif; font-size: 11px; font-weight: 600; }
+
+/* Form controls everywhere get rounded corners and a friendly focus ring. */
+input[type="text"], input[type="search"], input[type="email"], input[type="url"], input[type="number"],
+input[type="password"], input:not([type]), textarea, select {
+  border-radius: 10px;
+}
+input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px hsl(var(--secondary) / 0.25);
+}
+
+/* Native buttons styled as boxes in the old theme read better slightly rounded. */
+button.border, a.border { border-radius: 8px; }
+
+/* Scrollbars: thin and soft. */
+* { scrollbar-width: thin; scrollbar-color: hsl(var(--outline) / 0.7) transparent; }
+
+/* xyflow (topology graph) controls and nodes: rounded, soft. */
+.react-flow__controls { border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(16, 24, 40, 0.08); }
+.react-flow__node { border-radius: 12px; }
+.react-flow__minimap { border-radius: 10px; overflow: hidden; }
+
+/* Screen-specific stylesheets (dashboard-fidelity.css, StoryGraph.css …) and inline styles
+ * hardcode caps, Space Grotesk and JetBrains Mono. Normalize them inside the app shell;
+ * real code, terminals and the design kit's own code styles keep monospace. */
+[data-friendly] *,
+[data-friendly] *::before,
+[data-friendly] *::after {
+  text-transform: none !important;
+}
+[data-friendly] :where(*:not(code, kbd, samp, pre, pre *, .xterm, .xterm *, .font-code, .fx-mono, .fx-pre, .fx-terminal, .fx-pre *, .fx-terminal *)) {
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif !important;
+}
+[data-friendly] :where(*:not(.fx-h1, .fx-h2, .fx-h3)) {
+  letter-spacing: normal !important;
+}

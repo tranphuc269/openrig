@@ -33,8 +33,11 @@ import {
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Brain,
+  Briefcase,
   Cog,
+  Factory,
   FileText,
+  Gauge,
   Folder,
   LayoutDashboard,
   Network,
@@ -174,6 +177,33 @@ const RAIL_ICONS: RailIconSpec[] = [
     icon: FileText,
     activeWhen: (p) => p.startsWith("/specs") || p.startsWith("/plugins"),
     testId: "rail-specs",
+    group: "destination",
+  },
+  {
+    id: "studio",
+    label: "Factory Studio",
+    to: "/studio",
+    icon: Factory,
+    activeWhen: (p) => p.startsWith("/studio"),
+    testId: "rail-studio",
+    group: "destination",
+  },
+  {
+    id: "agent-workspace",
+    label: "Agent Workspace",
+    to: "/workspace",
+    icon: Briefcase,
+    activeWhen: (p) => p.startsWith("/workspace"),
+    testId: "rail-agent-workspace",
+    group: "destination",
+  },
+  {
+    id: "usage",
+    label: "Usage & cost",
+    to: "/usage",
+    icon: Gauge,
+    activeWhen: (p) => p.startsWith("/usage"),
+    testId: "rail-usage",
     group: "destination",
   },
   {
@@ -504,7 +534,10 @@ function AppShellInner({ children }: AppShellProps) {
             clearPlacement,
           }}
         >
-          <div className="h-screen flex flex-col">
+          <div
+            className="h-screen flex flex-col"
+            data-friendly=""
+          >
             <UiMaintenanceNotice />
             {/* Top bar — universal across viewports per universal-shell.md
                 L40–L53. Single source of truth: same element renders at

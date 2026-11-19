@@ -681,3 +681,93 @@
 .df-root .df-hosts-banner { font-size: 10px; padding: 4px 0; opacity: 0.85; }
 .df-root .df-hosts-error { color: #a33d2e; font-size: 10px; }
 .dark .df-root .df-hosts-btn:hover { background: rgba(255, 255, 255, 0.08); }
+
+/* ══════════════════════════════════════════════════════════════
+ * Friendly theme override for the dashboard.
+ * The structure above is pinned by tests, so the friendly look is
+ * applied here: app tokens instead of the paper-draft palette, no
+ * drafting textures/marks, rounded cards, sentence-case labels.
+ * ══════════════════════════════════════════════════════════════ */
+.df-root {
+  --df-paper: hsl(var(--background));
+  --df-card: hsl(var(--surface-container-lowest));
+  --df-ink: hsl(var(--on-surface));
+  --df-ink-2: hsl(var(--on-surface-variant));
+  --df-ink-3: hsl(var(--on-surface-variant) / 0.7);
+  --df-line: hsl(var(--outline-variant));
+  --df-rule: hsl(var(--outline-variant));
+  --df-amber: hsl(var(--warning));
+  --df-green: hsl(var(--success));
+  background: transparent;
+}
+.df-root::before,
+.df-root::after { display: none; }
+.df-main { padding: 32px 40px 0; max-width: 1240px; margin: 0 auto; width: 100%; }
+
+/* Labels written in caps in the markup read as sentence case. */
+[data-friendly] .df-root .df-eyebrow-l,
+[data-friendly] .df-root .df-sub,
+[data-friendly] .df-root .df-feh > span:first-child,
+[data-friendly] .df-root .df-k,
+[data-friendly] .df-root .df-clabel,
+[data-friendly] .df-root .df-cap,
+[data-friendly] .df-root .df-foot-fl { text-transform: lowercase !important; }
+[data-friendly] .df-root .df-eyebrow-l::first-letter,
+[data-friendly] .df-root .df-feh > span:first-child::first-letter,
+[data-friendly] .df-root .df-k::first-letter,
+[data-friendly] .df-root .df-clabel::first-letter,
+[data-friendly] .df-root .df-cap::first-letter,
+[data-friendly] .df-root .df-foot-fl::first-letter { text-transform: uppercase !important; }
+[data-friendly] .df-root .df-sub b { text-transform: none !important; }
+
+.df-eyebrow { font-size: 13px; font-weight: 600; color: hsl(var(--secondary)); }
+.df-eyebrow-r, .df-reg, .df-plus, .df-idx, .df-half, .df-crop,
+.df-foot-dots, .df-dissolve, .df-arts, .df-sqs, .df-plus2, .df-feh-mark { display: none !important; }
+.df-h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; margin: 6px 0 8px; }
+.df-sub { font-size: 14px; color: var(--df-ink-2); }
+.df-sub b {
+  display: inline-flex; align-items: center; gap: 6px; margin-left: 4px; padding: 2px 10px;
+  border-radius: 999px; font-size: 12px; font-weight: 600;
+  background: hsl(var(--success) / 0.12); color: hsl(var(--success));
+}
+
+/* Field environment → a tidy stats card. */
+.df-fieldenv {
+  border: 1px solid var(--df-line); border-radius: 16px; background: var(--df-card);
+  padding: 16px 18px; box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 6px 18px rgba(16, 24, 40, 0.05);
+  width: 300px;
+}
+.df-feh { font-size: 13px; font-weight: 600; color: var(--df-ink); margin-bottom: 8px; }
+.df-fe-row { font-size: 13px; line-height: 2; color: var(--df-ink-2); }
+.df-fe-row .df-dots { border-bottom: none; }
+.df-fe-row .df-v { font-weight: 600; color: var(--df-ink); }
+.df-fe-globe { display: none; }
+
+/* Launcher cards → rounded tiles with a soft lift. */
+.df-grid { column-gap: 18px; row-gap: 18px; margin-top: 32px; }
+.df-card {
+  height: 150px; border-radius: 18px; border: 1px solid var(--df-line); background: var(--df-card);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05); padding: 20px;
+}
+.df-card:hover {
+  transform: translateY(-2px); border-color: hsl(var(--secondary) / 0.45);
+  box-shadow: 0 10px 28px rgba(16, 24, 40, 0.1); background: var(--df-card);
+}
+.df-glyph svg { stroke: hsl(var(--secondary)) !important; opacity: 0.9; }
+.df-clabel { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; color: var(--df-ink); }
+.df-clabel::after { display: none; }
+.df-cap { font-size: 13px; color: var(--df-ink-2); padding-left: 6px; }
+.df-cap-glyph, .df-lead { display: none; }
+
+.df-foot { opacity: 0.7; }
+.df-foot-fl { font-size: 12px; color: var(--df-ink-3); }
+
+.dark .df-fieldenv, .dark .df-card { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); }
+/* Icon tile top-left, label bottom-left. */
+.df-glyph {
+  left: 20px; top: 20px; width: 52px; height: 52px; padding: 8px;
+  border-radius: 14px; background: hsl(var(--secondary) / 0.1);
+}
+.df-glyph svg { width: 100% !important; height: 100% !important; }
+.df-clabel { left: 20px; bottom: 18px; }
+[data-friendly] .df-root .df-v { text-transform: lowercase !important; }
