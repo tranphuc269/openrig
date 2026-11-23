@@ -32,16 +32,9 @@ function FormSummary({ id }: { id: string }) {
     return (
       <div className="fx-tiny flex flex-col gap-1" data-testid="factory-form-summary">
         <span>
-          {d.placeholders.length
-            ? <>Fields agents fill: {d.placeholders.map((p) => <code key={p} className="mr-1">{`{{${p}}}`}</code>)}</>
-            : "No {{fields}} in the form yet."}
+          {d.outline.filter((o) => /^heading \d$/.test(o.style ?? "")).slice(0, 8).map((o) => o.text).join(" · ") || "No headings found; agents follow its text layout."}
         </span>
-        <span>
-          {d.placeholders.includes("content")
-            ? "The body is written where {{content}} is."
-            : "Tip: type {{content}} on its own line where the body should go; otherwise it's added at the end."}
-          {` ${headings} heading styles, ${d.tables} table${d.tables === 1 ? "" : "s"}.`}
-        </span>
+        <span>{`${headings} heading styles, ${d.tables} table${d.tables === 1 ? "" : "s"}.`}</span>
       </div>
     );
   }
@@ -104,10 +97,10 @@ export function DocumentFormat({ d, onChange }: { d: FactoryDeliverable; onChang
       {office ? (
         <div className="fx-inset flex flex-col gap-2.5 p-3">
           <Field
-            label={format === "docx" ? "Word form to follow" : "Excel form to follow"}
+            label={format === "docx" ? "Word sample to model on" : "Excel sample to model on"}
             hint={missing
               ? <span className="text-[color:var(--fx-danger)]">This form was deleted. Pick or upload another.</span>
-              : current ? undefined : "Without a form, agents use a clean default layout."}
+              : current ? undefined : "Without a sample, agents use a clean default layout."}
           >
             <div className="flex flex-wrap gap-2">
               <Select
@@ -119,7 +112,7 @@ export function DocumentFormat({ d, onChange }: { d: FactoryDeliverable; onChang
                   onChange(e.target.value ? { ...rest, template: e.target.value } : rest);
                 }}
               >
-                <option value="">No form (default layout)</option>
+                <option value="">No sample (default layout)</option>
                 {matching.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </Select>
               <input
@@ -131,7 +124,7 @@ export function DocumentFormat({ d, onChange }: { d: FactoryDeliverable; onChang
                 onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = ""; }}
               />
               <Button onClick={() => fileInput.current?.click()} disabled={upload.isPending} data-testid="factory-document-form-upload">
-                <Upload /> {upload.isPending ? "Uploading…" : "Upload form"}
+                <Upload /> {upload.isPending ? "Uploading…" : "Upload sample"}
               </Button>
               {current ? (
                 <a className="fx-btn fx-btn-ghost" href={templateFileUrl(current.id)} title="Download the form">
@@ -143,9 +136,9 @@ export function DocumentFormat({ d, onChange }: { d: FactoryDeliverable; onChang
           {upload.error ? <p className="fx-tiny text-[color:var(--fx-danger)]">{(upload.error as Error).message}</p> : null}
           {current ? <FormSummary id={current.id} /> : null}
           <p className="fx-tiny">
-            Agents build this file with <code>rig office</code>: {format === "docx"
-              ? "they keep the form's styles, header and footer, fill its {{fields}} and write the body with its heading, list and table styles."
-              : "they keep the form's sheets, styles and formulas and write rows under its header."}
+            Agents read the sample, then write a new {format === "docx" ? "document" : "workbook"} for the task in the same kind of structure
+            and in its look ({format === "docx" ? "heading, list and table styles, page setup, header and footer" : "header and cell styles"}).
+            They may add, drop or improve sections; the sample's own example text is never handed back.
           </p>
         </div>
       ) : null}

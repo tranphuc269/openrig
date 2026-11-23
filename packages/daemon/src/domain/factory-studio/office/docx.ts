@@ -1,8 +1,8 @@
 // Word (.docx) support for the office tool.
 //
-//   buildDocx   copy a template (or a plain built-in one), fill {{placeholders}} and lay the
-//               Markdown content out with the template's own styles (Heading 1, List Bullet,
-//               Table Grid, …), so the result follows the person's form.
+//   buildDocx   lay Markdown content out with a form's own styles (Heading 1, List Bullet, Table
+//               Grid, …), page setup, header and footer. mode "style" writes a new body in the
+//               form's look; mode "fill" keeps the form's text and fills {{placeholders}}.
 //   inspectDocx what a template offers: its placeholders, styles and current text.
 //   readDocx    a document as Markdown, so an agent can read a teammate's Word file.
 
@@ -23,16 +23,21 @@ export interface DocxBuildInput {
   markdown?: string | null;
   /** Values for {{placeholders}}. A value with Markdown structure fills a whole paragraph as blocks. */
   vars?: Record<string, string>;
+  /** "fill": keep the form's text and fill it. "style": keep only the form's look (styles, page setup,
+   *  header, footer) and make the body the Markdown content. */
+  mode?: "fill" | "style";
 }
 
 export interface DocxBuildReport {
-  /** Where the content went: "placeholder" ({{content}}), "appended", or "none" (no content given). */
-  content: "placeholder" | "appended" | "none";
+  /** Where the content went: "placeholder" ({{content}}), "appended", "body" (--style: the whole body), or "none". */
+  content: "placeholder" | "appended" | "body" | "none";
   filled: string[];
   /** Placeholders in the template with no value: left as they are. */
   missing: string[];
   /** Values given for placeholders the template doesn't have. */
   unused: string[];
+  /** How many places in the document changed. */
+  changes: number;
 }
 
 export interface DocxInspection {
@@ -80,20 +85,61 @@ function innermostParagraphs(doc: XmlDocument): XmlElement[] {
   return elements(doc, "p").filter((p) => elements(p, "p").length === 0);
 }
 
-function paragraphText(p: XmlElement): string {
-  let text = "";
+interface Segment { node: XmlElement; editable: boolean; text: string }
+
+/** The text pieces of a paragraph in order: w:t nodes (editable), tabs and breaks. */
+function segments(p: XmlElement): Segment[] {
+  const out: Segment[] = [];
   const walk = (n: XmlNode) => {
     for (let c = n.firstChild; c; c = c.nextSibling) {
       if (c.nodeType !== 1) continue;
       const el = c as XmlElement;
-      if (el.namespaceURI === W && el.localName === "t") text += el.textContent ?? "";
-      else if (el.namespaceURI === W && el.localName === "tab") text += "\t";
-      else if (el.namespaceURI === W && (el.localName === "br" || el.localName === "cr")) text += "\n";
-      else if (!(el.namespaceURI === W && (el.localName === "pPr" || el.localName === "rPr" || el.localName === "instrText" || el.localName === "delText"))) walk(el);
+      if (el.namespaceURI === W && el.localName === "t") out.push({ node: el, editable: true, text: el.textContent ?? "" });
+      else if (el.namespaceURI === W && el.localName === "tab") out.push({ node: el, editable: false, text: "\t" });
+      else if (el.namespaceURI === W && (el.localName === "br" || el.localName === "cr")) out.push({ node: el, editable: false, text: "\n" });
+      else if (!(el.namespaceURI === W && (el.localName === "pPr" || el.localName === "rPr" || el.localName === "instrText" || el.localName === "delText" || el.localName === "p"))) walk(el);
     }
   };
   walk(p);
-  return text;
+  return out;
+}
+
+function paragraphText(p: XmlElement): string {
+  return segments(p).map((s) => s.text).join("");
+}
+
+function setT(t: XmlElement, text: string): void {
+  while (t.firstChild) t.removeChild(t.firstChild);
+  t.appendChild(t.ownerDocument!.createTextNode(text));
+  t.setAttribute("xml:space", "preserve");
+}
+
+/** Replace characters [start, end) of a paragraph's text in place, keeping every run's formatting. */
+function replaceRange(p: XmlElement, start: number, end: number, text: string): boolean {
+  const segs = segments(p);
+  let pos = 0;
+  let placed = false;
+  let lastBefore: Segment | null = null;
+  for (const seg of segs) {
+    const a = pos;
+    const b = pos + seg.text.length;
+    pos = b;
+    if (b <= start) { if (seg.editable) lastBefore = seg; continue; }
+    if (a >= end) break;
+    const from = Math.max(0, start - a);
+    const to = Math.min(seg.text.length, end - a);
+    if (seg.editable) {
+      setT(seg.node, seg.text.slice(0, from) + (placed ? "" : text) + seg.text.slice(to));
+      placed = true;
+    } else if (from === 0 && to === seg.text.length) {
+      seg.node.parentNode?.removeChild(seg.node);
+    }
+  }
+  if (!placed) {
+    if (!lastBefore) return false;
+    setT(lastBefore.node, (lastBefore.node.textContent ?? "") + text);
+  }
+  return true;
 }
 
 function attr(el: XmlElement | undefined, name: string): string | null {
@@ -340,7 +386,10 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
   const filled = new Set<string>();
   const missing = new Set<string>();
   let contentPlaced = false;
+  let changes = 0;
   const markdown = input.markdown?.trim() ? input.markdown : null;
+  const styleOnly = input.mode === "style" && !!input.template;
+  if (styleOnly && markdown === null) throw new Error("--style needs the document's content: pass --content <draft.md>");
   let docRenderer: Renderer | null = null;
 
   for (const part of textParts(zip)) {
@@ -348,6 +397,11 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
     const doc = parseXml(await zip.file(part)!.async("string"));
     const renderer = new Renderer(styles, isBody);
     if (isBody) docRenderer = renderer;
+    if (isBody && styleOnly) {
+      // Keep the form's look only: drop its body text, keep the page setup (the last sectPr).
+      const body = elements(doc, "body")[0];
+      if (body) for (const el of children(body)) if (el.localName !== "sectPr") body.removeChild(el);
+    }
 
     for (const p of innermostParagraphs(doc)) {
       const text = paragraphText(p);
@@ -362,21 +416,22 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
         if (value !== undefined && (only === "content" || looksLikeBlocks(value))) {
           insertBlocks(p, fragment(doc, renderer.blocks(parseMarkdown(value))));
           filled.add(only);
+          changes++;
           if (only === "content") contentPlaced = true;
           continue;
         }
       }
 
-      let changed = false;
-      const next = text.replace(PLACEHOLDER, (whole, key: string) => {
+      for (const m of [...text.matchAll(PLACEHOLDER)].reverse()) {
+        const key = m[1]!;
         const value = key === "content" && vars.content === undefined ? markdown : vars[key];
-        if (value === undefined || value === null) { missing.add(key); return whole; }
-        changed = true;
-        filled.add(key);
-        if (key === "content") contentPlaced = true;
-        return parseInline(value).map((r) => r.text).join("");
-      });
-      if (changed) setParagraphText(p, next);
+        if (value === undefined || value === null) { missing.add(key); continue; }
+        if (replaceRange(p, m.index!, m.index! + m[0].length, parseInline(value).map((r) => r.text).join(""))) {
+          filled.add(key);
+          changes++;
+          if (key === "content") contentPlaced = true;
+        }
+      }
     }
 
     if (isBody && markdown !== null && !contentPlaced && !seen.has("content")) {
@@ -384,6 +439,7 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
       if (body) {
         const sect = children(body, "sectPr")[0];
         for (const n of fragment(doc, renderer.blocks(parseMarkdown(markdown)))) body.insertBefore(n as never, (sect ?? null) as never);
+        changes++;
       }
     }
     zip.file(part, serialize(doc));
@@ -405,7 +461,7 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
   }
 
   const buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
-  const contentState: DocxBuildReport["content"] = markdown === null ? "none" : contentPlaced ? "placeholder" : "appended";
+  const contentState: DocxBuildReport["content"] = markdown === null ? "none" : styleOnly ? "body" : contentPlaced ? "placeholder" : "appended";
   for (const k of filled) missing.delete(k);
   return {
     buffer,
@@ -414,6 +470,7 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
       filled: [...filled].sort(),
       missing: [...missing].sort(),
       unused: Object.keys(vars).filter((k) => !seen.has(k)).sort(),
+      changes,
     },
   };
 }

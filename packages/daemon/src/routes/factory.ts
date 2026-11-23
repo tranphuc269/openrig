@@ -279,7 +279,9 @@ export function factoryRoutes(opts: FactoryRoutesOpts = {}): Hono {
     const store = storeFor(c);
     let team;
     try { team = store.read(name); } catch { return; }
-    if (!team || team.members.every((m) => m.runtime === "claude-code" && !m.model)) return;
+    if (!team) return;
+    // Regenerated on every start, so agents always get guidance for this daemon's tools (and teams saved
+    // with Codex or a per-member model move to Claude Code with the Settings model).
     store.save({ ...team, members: team.members.map(({ model: _model, ...m }) => ({ ...m, runtime: "claude-code" as const })) });
   };
 

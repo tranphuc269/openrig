@@ -167,7 +167,10 @@ export function NewTaskPage() {
                 <Avatar name={t.title} colorKey={t.name} />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center justify-between gap-2">
-                    <span className="fx-h3 truncate">{t.title}</span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="fx-h3 truncate">{t.title}</span>
+                      {t.autonomy === "full" ? <Pill tone="warning">Full auto</Pill> : null}
+                    </span>
                     {team === t.name ? <Check className="h-4 w-4 shrink-0 text-[color:var(--fx-primary-text)]" /> : null}
                   </span>
                   <span className="fx-small mt-1 flex flex-wrap items-center gap-1">
@@ -218,7 +221,7 @@ export function NewTaskPage() {
         <span className="fx-empty-icon h-10 w-10 rounded-[10px]"><Rocket className="!h-5 !w-5" /></span>
         <span className="fx-small min-w-0 flex-1">
           {selected
-            ? <>Starts the {selected.memberCount} agents of <b className="text-[color:var(--fx-text)]">{selected.title}</b>{selected.workflow === "sequential" ? `. ${selected.members[0]?.title} gets the task first and hands off when done.` : ". Every member gets the task."}</>
+            ? <>Starts the {selected.memberCount} agents of <b className="text-[color:var(--fx-text)]">{selected.title}</b>{selected.workflow === "sequential" ? `. ${selected.members[0]?.title} gets the task first and hands off when done.` : ". Every member gets the task."}{selected.autonomy === "full" ? " Full auto: agents won't stop to ask you anything." : ""}</>
             : "Choose a team to see what happens next."}
         </span>
         <Button variant="primary" disabled={!canStart} onClick={onStart} data-testid="workspace-start">

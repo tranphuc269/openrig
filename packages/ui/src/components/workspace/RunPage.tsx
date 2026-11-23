@@ -22,9 +22,9 @@ import {
 } from "lucide-react";
 import { MarkdownViewer } from "../markdown/MarkdownViewer.js";
 import { OfficePreview } from "./OfficePreview.js";
+import { ProgressiveTerminal } from "../terminal/ProgressiveTerminal.js";
 import {
   outputUrl,
-  useMemberScreen,
   useMessageMember,
   useReview,
   useRunDetail,
@@ -212,7 +212,7 @@ export function RunPage({ runId }: { runId: string }) {
               ))}
             </div>
             <div className="p-4">
-              {tab === "screen" ? <ScreenView runId={run.id} member={member} live={live} /> : null}
+              {tab === "screen" ? <ScreenView member={member} live={live} /> : null}
               {tab === "message" ? <MessageView runId={run.id} member={member} live={live} /> : null}
               {tab === "activity" ? <ActivityView detail={detail} /> : null}
             </div>
@@ -418,17 +418,20 @@ function OutputPanel({ runId, member, deliverable, canRework }: { runId: string;
   );
 }
 
-function ScreenView({ runId, member, live }: { runId: string; member: RunMember | null; live: boolean }) {
-  const screen = useMemberScreen(runId, member?.id ?? null, live);
+function ScreenView({ member, live }: { member: RunMember | null; live: boolean }) {
   if (!live) return <p className="fx-small">The team isn't running, so there's no live screen.</p>;
   if (!member) return null;
   return (
-    <div>
-      <pre data-testid="workspace-screen" className="fx-terminal max-h-[360px] overflow-auto whitespace-pre-wrap">
-        {screen.error ? `Screen unavailable: ${(screen.error as Error).message}` : screen.data?.content || "…"}
-      </pre>
+    <div data-testid="workspace-screen">
+      <ProgressiveTerminal
+        key={member.session}
+        sessionName={member.session}
+        terminalKey={`workspace:${member.session}`}
+        testIdPrefix="workspace-terminal"
+        fit="width"
+      />
       <p className="fx-tiny mt-2">
-        Read-only, refreshes every few seconds. To take over in a terminal: <code>tmux attach -t {member.session}</code>
+        Click the screen to type into {member.title}'s terminal (answer a prompt, press Enter or Esc). Or in your own terminal: <code>tmux attach -t {member.session}</code>
       </p>
     </div>
   );

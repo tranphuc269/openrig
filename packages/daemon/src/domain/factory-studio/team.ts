@@ -10,6 +10,11 @@ export type FactoryRuntime = (typeof FACTORY_RUNTIMES)[number];
 export const FACTORY_WORKFLOW_MODES = ["sequential", "parallel"] as const;
 export type FactoryWorkflowMode = (typeof FACTORY_WORKFLOW_MODES)[number];
 
+/** "ask": agents stop for permission on risky commands and ask the person about unclear points.
+ *  "full": agents never stop for permission (Claude bypass) and decide on their own, noting assumptions. */
+export const FACTORY_AUTONOMY = ["ask", "full"] as const;
+export type FactoryAutonomy = (typeof FACTORY_AUTONOMY)[number];
+
 export interface FactoryDeliverable {
   id: string;
   title: string;
@@ -59,6 +64,8 @@ export interface FactoryTeam {
   title: string;
   summary: string;
   workflow: FactoryWorkflowMode;
+  /** Absent means "ask" (teams saved before this setting existed). */
+  autonomy?: FactoryAutonomy;
   members: FactoryMember[];
   createdAt: string;
   updatedAt: string;
@@ -116,6 +123,10 @@ export function parseFactoryTeamInput(raw: unknown): { ok: true; team: FactoryTe
   const workflow = str(body.workflow) || "sequential";
   if (!(FACTORY_WORKFLOW_MODES as readonly string[]).includes(workflow)) {
     errors.push(`workflow: must be one of ${FACTORY_WORKFLOW_MODES.join(", ")}`);
+  }
+  const autonomy = str(body.autonomy) || "ask";
+  if (!(FACTORY_AUTONOMY as readonly string[]).includes(autonomy)) {
+    errors.push(`autonomy: must be one of ${FACTORY_AUTONOMY.join(", ")}`);
   }
 
   const rawMembers = Array.isArray(body.members) ? body.members : [];
@@ -205,5 +216,5 @@ export function parseFactoryTeamInput(raw: unknown): { ok: true; team: FactoryTe
   });
 
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, team: { name, title, summary, workflow: workflow as FactoryWorkflowMode, members } };
+  return { ok: true, team: { name, title, summary, workflow: workflow as FactoryWorkflowMode, ...(autonomy === "full" ? { autonomy: "full" as const } : {}), members } };
 }

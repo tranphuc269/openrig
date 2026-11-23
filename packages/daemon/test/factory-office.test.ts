@@ -89,6 +89,23 @@ describe("Word documents", () => {
     expect(rels).toContain('Target="https://example.com"');
   });
 
+  it("--style writes a new body in the form's look: the form's text is gone, its styles, header and footer stay", async () => {
+    const form = await wordForm();
+    const zip = await JSZip.loadAsync(form);
+    zip.file("word/header1.xml", `<?xml version="1.0" encoding="UTF-8"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Company header {{project}}</w:t></w:r></w:p></w:hdr>`);
+    const withHeader = await zip.generateAsync({ type: "nodebuffer" });
+    const { buffer, report } = await buildDocx({ template: withHeader, mode: "style", markdown: "# Thiết kế\n\n## Phạm vi\n\nNội dung mới.", vars: { project: "Clinic" } });
+    expect(report.content).toBe("body");
+    const text = await readDocx(buffer);
+    expect(text).toContain("# Thiết kế");
+    expect(text).not.toContain("Signed: ____");
+    expect(text).not.toContain("{{content}}");
+    const out = await JSZip.loadAsync(buffer);
+    expect(await out.file("word/header1.xml")!.async("string")).toContain("Company header Clinic");
+    expect(await out.file("word/document.xml")!.async("string")).toContain('<w:pStyle w:val="Heading2"/>');
+    await expect(buildDocx({ template: withHeader, mode: "style" })).rejects.toThrow(/--content/);
+  });
+
   it("rejects files that aren't Word documents", async () => {
     await expect(buildDocx({ template: Buffer.from("not a zip") })).rejects.toThrow(/Not a Word file/);
   });
@@ -145,6 +162,30 @@ describe("Excel workbooks", () => {
     const preview = await previewXlsx(buffer);
     expect(preview.map((p) => p.name)).toEqual(["Summary", "Test cases", "Bugs"]);
     expect(preview[2]!.rows[0]![0]).toMatchObject({ v: "ID", b: true });
+  });
+
+  it("--style builds the agent's own sheets with the form's header and cell look", async () => {
+    const form = new ExcelJS.Workbook();
+    const ws = form.addWorksheet("Mẫu");
+    ["A", "B", "C"].forEach((h, i) => {
+      const c = ws.getRow(3).getCell(i + 1);
+      c.value = h;
+      c.font = { bold: true, name: "Times New Roman" };
+      c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE699" } };
+    });
+    ws.getRow(4).getCell(1).border = { left: { style: "thin" } };
+    const { buffer } = await buildXlsx({
+      style: Buffer.from(await form.xlsx.writeBuffer() as ArrayBuffer),
+      data: { sheets: [{ name: "Kịch bản", columns: ["ID", "Bước", "Kết quả"], rows: [["TC-1", "Mở app", "OK"]] }] },
+    });
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer as never);
+    expect(wb.worksheets.map((w) => w.name)).toEqual(["Kịch bản"]);
+    const sheet = wb.getWorksheet("Kịch bản")!;
+    expect(sheet.getCell("B1").font?.name).toBe("Times New Roman");
+    expect((sheet.getCell("B1").fill as ExcelJS.FillPattern).fgColor?.argb).toBe("FFFFE699");
+    expect(sheet.getCell("A2").border?.left?.style).toBe("thin");
+    expect(sheet.getCell("C2").value).toBe("OK");
   });
 
   it("inserts rows above existing content when asked", async () => {
@@ -207,8 +248,9 @@ describe("agents get office instructions", () => {
     const guide = (files.get("agents/qa/guidance/deliverables.md") as { content: string }).content;
     expect(guide).toContain("Excel (.xlsx)");
     expect(guide).toContain("Cases.xlsx at `/forms/cases.xlsx`");
-    expect(guide).toContain("rig office inspect '/forms/cases.xlsx'");
-    expect(guide).toContain("rig office xlsx --template '/forms/cases.xlsx' --data .factory/drafts/qa/cases.json --out 'docs/test-cases.xlsx'");
+    expect(guide).toContain("rig office read '/forms/cases.xlsx'");
+    expect(guide).toContain("never just copy the form");
+    expect(guide).toContain("rig office xlsx --style '/forms/cases.xlsx' --data .factory/drafts/qa/cases.json --out 'docs/test-cases.xlsx'");
     expect(guide).toContain("What goes in the workbook:");
     expect(files.has("agents/qa/skills/office-docs/SKILL.md")).toBe(true);
     expect(files.has("agents/dev/skills/office-docs/SKILL.md")).toBe(true);
@@ -283,7 +325,7 @@ describe("form routes", () => {
     });
     expect(save.status).toBe(201);
     const guide = readFileSync(join(tmp, "teams", "word-team", "agents", "writer", "guidance", "deliverables.md"), "utf8");
-    expect(guide).toContain(`rig office docx --template '${join(tmp, "forms", `${id}.docx`)}'`);
+    expect(guide).toContain(`rig office docx --style '${join(tmp, "forms", `${id}.docx`)}' --content .factory/drafts/writer/report.md`);
 
     const del = await app.request(`/api/factory/office-templates/${id}`, { method: "DELETE" });
     expect(del.status).toBe(409);

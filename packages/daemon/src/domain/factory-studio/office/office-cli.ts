@@ -16,24 +16,37 @@ import { buildXlsx, inspectXlsx, readXlsx, type XlsxData } from "./xlsx.js";
 
 const USAGE = `Factory Studio office tool (rig office <command>)
 
-  inspect <form.docx|form.xlsx>
-      Show what a form contains: its {{placeholders}}, styles, sheets and header rows.
-
-  docx --out <file.docx> [--template <form.docx>] [--content <draft.md>] [--vars <vars.json>]
-      Build a Word document. The Markdown draft is laid out with the form's own styles
-      (headings, lists, tables). It replaces a paragraph holding only {{content}}, or is
-      added at the end. vars.json fills other {{placeholders}}: {"project": "Clinic booking"}.
-
-  xlsx --out <file.xlsx> [--template <form.xlsx>] --data <data.json>
-      Build an Excel workbook from the form. data.json:
-        { "vars":   { "project": "Clinic" },                 // {{placeholders}} in cells
-          "cells":  { "Summary!B2": "v1.0", "B3": 42 },      // single cells; "=SUM(A1:A3)" is a formula
-          "tables": [ { "sheet": "Test cases", "start": "A5", "rows": [["TC-01", "Login", "Pass"]] } ],
-          "sheets": [ { "name": "Bugs", "columns": ["ID", "Title"], "rows": [["B-1", "Crash"]] } ] }
-      Table rows copy the style of the start row. Add "insert": true to push rows below down.
-
   read <file.docx|file.xlsx>
-      Print a document as Markdown, to read a teammate's Word or Excel file.
+      Print a Word or Excel file as Markdown: read a form to understand it, or a teammate's document.
+
+  inspect <form.docx|form.xlsx>
+      Show a form's styles, {{placeholders}}, sheets and header rows.
+
+  docx --style <form.docx> --content <draft.md> --out <file.docx> [--vars <vars.json>]
+      Write a NEW Word document in the form's look: its styles (headings, lists, tables), page setup,
+      header and footer are kept; the body is your Markdown draft. The form's own body text is not kept,
+      so put everything the document needs in the draft (title page, history table, sections, …).
+      vars.json fills {{placeholders}} left in the header/footer: {"project": "Clinic booking"}.
+
+  docx --template <form.docx> [--content <draft.md>] [--vars <vars.json>] --out <file.docx>
+      Fill the form itself: {{placeholders}} get values, the draft replaces a {{content}} paragraph
+      (or is added at the end). Only for forms made with {{placeholders}}.
+
+  docx --content <draft.md> --out <file.docx>
+      A Word document in a clean default look.
+
+  xlsx --style <form.xlsx> --data <data.json> --out <file.xlsx>
+      A NEW workbook whose sheets you design ("sheets" below), with the form's header and cell look.
+
+  xlsx --template <form.xlsx> --data <data.json> --out <file.xlsx>
+      Fill the form itself: vars, cells and table rows written into its sheets.
+
+  data.json:
+    { "sheets": [ { "name": "Test cases", "columns": ["ID", "Title", "Steps", "Expected"], "rows": [["TC-01", "Log in", "…", "…"]] } ],
+      "vars":   { "project": "Clinic" },                 // {{placeholders}} in cells (--template)
+      "cells":  { "Summary!B2": "v1.0", "B3": 42 },      // single cells; "=SUM(A1:A3)" is a formula
+      "tables": [ { "sheet": "Test cases", "start": "A5", "rows": [["TC-01", "Login", "Pass"]] } ] }
+    Table rows copy the style of the start row. Add "insert": true to push rows below down.
 `;
 
 function fail(message: string): never {
@@ -150,16 +163,21 @@ async function run(command: string | undefined, rest: string[]): Promise<void> {
   if (command === "docx") {
     const out = flags.out ?? fail("docx needs --out <file.docx>");
     if (kind(out) !== "docx") fail("--out must end in .docx");
-    const template = flags.template ? readFile(flags.template, "template") : null;
+    if (flags.style && flags.template) fail("use --style (new document in the form's look) or --template (fill the form), not both");
+    const template = flags.style ? readFile(flags.style, "form") : flags.template ? readFile(flags.template, "template") : null;
     const markdown = flags.content ? readFile(flags.content, "content").toString("utf8") : null;
     const rawVars = flags.vars ? readJson(flags.vars, "vars") : {};
     if (!rawVars || typeof rawVars !== "object" || Array.isArray(rawVars)) fail("--vars must be a JSON object");
     const vars = Object.fromEntries(Object.entries(rawVars as Record<string, unknown>).map(([k, v]) => [k, v === null || v === undefined ? "" : String(v)]));
-    const { buffer, report } = await buildDocx({ template, markdown, vars });
+    const { buffer, report } = await buildDocx({ template, markdown, vars, mode: flags.style ? "style" : "fill" });
+    if (report.changes === 0) {
+      fail("nothing was written: the output would be the form unchanged. Pass --content <draft.md> with the document's text"
+        + (flags.template ? ", or use --style <form.docx> to write a new document in the form's look" : ""));
+    }
     const abs = writeOut(out, buffer);
     process.stdout.write([
       `Wrote ${abs}`,
-      report.content === "placeholder" ? "Content placed at {{content}}." : report.content === "appended" ? "Content added at the end of the document." : "",
+      report.content === "body" ? "New body written in the form's look." : report.content === "placeholder" ? "Content placed at {{content}}." : report.content === "appended" ? "Content added at the end of the form (the form's own text is still above it; use --style for a new document)." : "",
       list("Filled", report.filled.map((k) => `{{${k}}}`)),
       list("Still empty (no value given)", report.missing.map((k) => `{{${k}}}`)),
       list("Not in the form (ignored)", report.unused),
@@ -170,10 +188,15 @@ async function run(command: string | undefined, rest: string[]): Promise<void> {
   if (command === "xlsx") {
     const out = flags.out ?? fail("xlsx needs --out <file.xlsx>");
     if (kind(out) !== "xlsx") fail("--out must end in .xlsx");
+    if (flags.style && flags.template) fail("use --style (new workbook in the form's look) or --template (fill the form), not both");
     const template = flags.template ? readFile(flags.template, "template") : null;
+    const style = flags.style ? readFile(flags.style, "form") : null;
     const data = flags.data ? readJson(flags.data, "data") : {};
     if (!data || typeof data !== "object" || Array.isArray(data)) fail("--data must be a JSON object");
-    const { buffer, report } = await buildXlsx({ template, data: data as XlsxData });
+    const { buffer, report } = await buildXlsx({ template, style, data: data as XlsxData });
+    if (report.rowsWritten === 0 && report.filled.length === 0 && Object.keys((data as XlsxData).cells ?? {}).length === 0) {
+      fail("nothing was written: add \"sheets\" (or \"tables\"/\"cells\") with the workbook's data to --data");
+    }
     const abs = writeOut(out, buffer);
     process.stdout.write([
       `Wrote ${abs} (sheets: ${report.sheets.join(", ")}; ${report.rowsWritten} rows)`,

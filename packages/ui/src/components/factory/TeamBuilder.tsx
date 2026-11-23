@@ -294,6 +294,27 @@ export function TeamBuilder({ teamName, templateId }: { teamName?: string; templ
               ))}
             </div>
           </Field>
+          <Field
+            label="When agents need you"
+            className="md:col-span-3"
+            hint={(team.autonomy ?? "ask") === "full"
+              ? <span data-testid="factory-autonomy-warning" className="text-[color:var(--fx-warning-text,var(--fx-warning))]">Full auto: agents run any command without asking (Claude's --dangerously-skip-permissions) and decide unclear points themselves, noting them as assumptions. Use it for a project folder you trust, ideally under git.</span>
+              : "Agents stop to ask before risky commands and when something in the task is unclear. You answer from the task page."}
+          >
+            <div className="fx-segment self-start" role="group" aria-label="When agents need you">
+              {([["ask", "Ask me"], ["full", "Full auto"]] as const).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  data-testid={`factory-autonomy-${mode}`}
+                  aria-pressed={(team.autonomy ?? "ask") === mode}
+                  onClick={() => update({ autonomy: mode === "full" ? "full" : undefined })}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </Field>
           <Field label="Description" className="md:col-span-3">
             <TextArea
               value={team.summary}

@@ -131,8 +131,32 @@ function cloneStyle(style: Partial<ExcelJS.Style>): Partial<ExcelJS.Style> {
   return JSON.parse(JSON.stringify(style ?? {})) as Partial<ExcelJS.Style>;
 }
 
-export async function buildXlsx(input: { template?: Buffer | null; data: XlsxData }): Promise<{ buffer: Buffer; report: XlsxBuildReport }> {
-  const wb = await openXlsx(input.template ?? null);
+/** The look of a form's table: its header row's cell style and the style of the row under it. */
+async function formLook(buf: Buffer): Promise<{ header: Partial<ExcelJS.Style>; data: Partial<ExcelJS.Style>; font?: Partial<ExcelJS.Font> } | null> {
+  const wb = await openXlsx(buf);
+  for (const ws of wb.worksheets) {
+    let best: { row: number; col: number; count: number } | null = null;
+    ws.eachRow({ includeEmpty: false }, (row, n) => {
+      let count = 0;
+      let first = 0;
+      row.eachCell({ includeEmpty: false }, (cell, c) => {
+        if (!covered(cell) && typeof cell.value === "string" && cell.value.trim()) { count++; if (!first) first = c; }
+      });
+      if (count >= 2 && (!best || (best.count < 3 && count > best.count))) best = { row: n, col: first, count };
+    });
+    const b = best as { row: number; col: number; count: number } | null;
+    if (!b) continue;
+    const header = cloneStyle(ws.getRow(b.row).getCell(b.col).style);
+    const data = cloneStyle(ws.getRow(b.row + 1).getCell(b.col).style);
+    return { header, data, font: header.font ? { name: header.font.name, size: header.font.size } : undefined };
+  }
+  return null;
+}
+
+export async function buildXlsx(input: { template?: Buffer | null; style?: Buffer | null; data: XlsxData }): Promise<{ buffer: Buffer; report: XlsxBuildReport }> {
+  // --style: a new workbook that borrows the form's table look; --template: the form itself, filled.
+  const look = input.style ? await formLook(input.style) : null;
+  const wb = await openXlsx(input.style ? null : input.template ?? null);
   const data = input.data ?? {};
   const warnings: string[] = [];
   const vars = data.vars ?? {};
@@ -151,10 +175,15 @@ export async function buildXlsx(input: { template?: Buffer | null; data: XlsxDat
       s.columns.forEach((c, i) => {
         const cell = row.getCell(i + 1);
         cell.value = c;
-        cell.font = { bold: true };
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCE6F2" } };
-        cell.border = { bottom: { style: "thin", color: { argb: "FF8EA9DB" } } };
-        cell.alignment = { vertical: "middle", wrapText: true };
+        if (look) {
+          cell.style = cloneStyle(look.header);
+          cell.alignment = { ...(look.header.alignment ?? {}), vertical: "middle", wrapText: true };
+        } else {
+          cell.font = { bold: true };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCE6F2" } };
+          cell.border = { bottom: { style: "thin", color: { argb: "FF8EA9DB" } } };
+          cell.alignment = { vertical: "middle", wrapText: true };
+        }
       });
       ws.views = [{ state: "frozen", ySplit: 1 }];
       r = 2;
@@ -163,8 +192,9 @@ export async function buildXlsx(input: { template?: Buffer | null; data: XlsxDat
       const row = ws.getRow(r++);
       values.forEach((v, i) => {
         const cell = row.getCell(i + 1);
+        if (look) cell.style = cloneStyle(look.data);
         cell.value = toValue(v);
-        cell.alignment = { vertical: "top", wrapText: true };
+        cell.alignment = { ...(look?.data.alignment ?? {}), vertical: "top", wrapText: true };
       });
       rowsWritten++;
     }

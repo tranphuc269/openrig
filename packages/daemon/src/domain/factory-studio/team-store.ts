@@ -22,6 +22,7 @@ export interface FactoryTeamSummary {
   title: string;
   summary: string;
   workflow: FactoryTeam["workflow"];
+  autonomy: "ask" | "full";
   memberCount: number;
   deliverableCount: number;
   members: Array<{ id: string; title: string; runtime: string; session: string; deliverables: number }>;
@@ -248,6 +249,7 @@ export class FactoryTeamStore {
         title: team.title,
         summary: team.summary,
         workflow: team.workflow,
+        autonomy: team.autonomy ?? "ask",
         memberCount: team.members.length,
         deliverableCount: team.members.reduce((n, m) => n + m.deliverables.length, 0),
         members: team.members.map((m) => ({

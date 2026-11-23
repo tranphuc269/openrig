@@ -86,6 +86,8 @@ function rigYaml(team: FactoryTeam): string {
     name: team.name,
     summary: team.summary || team.title,
     culture_file: "CULTURE.md",
+    // Full auto: Claude runs with --dangerously-skip-permissions and its one-time bypass warning is accepted.
+    ...(team.autonomy === "full" ? { permission_policy: "builtin:yolo", non_interruptive: true } : {}),
     pods: [{ id: FACTORY_POD_ID, label: team.title, members, edges }],
     edges: [],
   });
@@ -108,6 +110,11 @@ function cultureMd(team: FactoryTeam, office?: OfficeToolOptions): string {
     "- Read the deliverables of the members before you; do not contradict them silently. If you disagree,",
     "  write the disagreement under an \"Open questions\" heading and tell the person.",
     "- Never invent facts the task did not give you. Mark assumptions as assumptions.",
+    ...(team.autonomy === "full" ? [
+      "- This team runs in full auto: the person is not watching. Never stop to wait for an answer or an approval.",
+      "  When something is unclear, choose the most reasonable option, write it under an \"Assumptions\" heading in",
+      "  your document, and keep going. Only `rig ask` the person when the task cannot be done at all without them.",
+    ] : []),
     "- When the person asks for rework, change the same files and list what changed at the top under \"Revision notes\".",
     ...(office && teamUsesOffice(team) ? [
       "- Word (.docx) and Excel (.xlsx) documents are built and read with the office tool (skill `office-docs`).",
@@ -123,46 +130,40 @@ function draftBase(member: FactoryMember, d: FactoryDeliverable): string {
 
 function officeSteps(member: FactoryMember, d: FactoryDeliverable, office: OfficeToolOptions, form: { path: string; name: string } | null): string[] {
   const draft = draftBase(member, d);
-  const tpl = form ? ` --template ${shellQuote(form.path)}` : "";
+  const style = form ? ` --style ${shellQuote(form.path)}` : "";
   const out: string[] = [];
-  if (deliverableFormat(d.path) === "docx") {
+  const docx = deliverableFormat(d.path) === "docx";
+  out.push(
+    docx
+      ? "- **Format:** Word (.docx), built with the office tool (skill `office-docs`). Never write the .docx by hand and never just copy the form."
+      : "- **Format:** Excel (.xlsx), built with the office tool (skill `office-docs`). Never write the .xlsx by hand and never just copy the form.",
+  );
+  if (form) {
     out.push(
-      "- **Format:** Word (.docx). Build it with the office tool (skill `office-docs`); never write the .docx by hand.",
-      form
-        ? `- **Form to follow:** ${form.name} at \`${form.path}\`. Keep its layout: its styles, header, footer and fixed text stay as they are; you fill it.`
-        : "- **Form:** none given; the tool uses a clean default layout.",
-      "",
-      "How to build it:",
-      "",
-      "```bash",
-      ...(form ? [`${office.command} inspect ${shellQuote(form.path)}   # see the form's {{placeholders}} and styles first`] : []),
-      `# 1. Write the content as Markdown in ${draft}.md (headings, lists, tables).`,
-      ...(form ? [`# 2. Put values for the form's other {{placeholders}} in ${draft}.vars.json, e.g. {"project": "…"}`] : []),
-      `${office.command} docx${tpl} --content ${draft}.md${form ? ` --vars ${draft}.vars.json` : ""} --out ${shellQuote(d.path)}`,
-      `${office.command} read ${shellQuote(d.path)}   # check the result`,
-      "```",
-      "",
-      "To change the document later, edit the draft and run the same `docx` command again.",
+      `- **Model to follow:** ${form.name} at \`${form.path}\`. Read it first and understand it: its sections${docx ? ", tables" : ", sheets, columns"} and level of detail.`,
+      "  Then write YOUR document for this task in the same kind of structure. Adapt it: keep what fits, add sections or columns that help,",
+      "  drop what doesn't apply, and improve on it where you can. Its sample or hint text is not content: replace all of it with real content.",
+    );
+  }
+  out.push("", "How to build it:", "", "```bash");
+  if (form) out.push(`${office.command} read ${shellQuote(form.path)}   # understand the model first`);
+  if (docx) {
+    out.push(
+      `# Write the whole document as Markdown in ${draft}.md: title, version/history table if the model has one, every section with real content.`,
+      `${office.command} docx${style} --content ${draft}.md --out ${shellQuote(d.path)}`,
     );
   } else {
     out.push(
-      "- **Format:** Excel (.xlsx). Build it with the office tool (skill `office-docs`); never write the .xlsx by hand.",
-      form
-        ? `- **Form to follow:** ${form.name} at \`${form.path}\`. Keep its sheets, headers, styles and formulas; write your rows where the form expects them.`
-        : "- **Form:** none given; describe each sheet with `sheets` (name, columns, rows).",
-      "",
-      "How to build it:",
-      "",
-      "```bash",
-      ...(form ? [`${office.command} inspect ${shellQuote(form.path)}   # see the sheets, header rows and where rows start`] : []),
-      `# Write the values as JSON in ${draft}.json (vars, cells, tables${form ? "" : ", sheets"}; see the office-docs skill).`,
-      `${office.command} xlsx${tpl} --data ${draft}.json --out ${shellQuote(d.path)}`,
-      `${office.command} read ${shellQuote(d.path)}   # check the result`,
-      "```",
-      "",
-      "To change the workbook later, edit the JSON and run the same `xlsx` command again.",
+      `# Design the workbook in ${draft}.json as "sheets" (name, columns, rows), every row filled with real data for this task.`,
+      `${office.command} xlsx${style} --data ${draft}.json --out ${shellQuote(d.path)}`,
     );
   }
+  out.push(
+    `${office.command} read ${shellQuote(d.path)}   # check it: real content everywhere, nothing left from the model's sample text`,
+    "```",
+    "",
+    `To change it later, edit the draft and run the same \`${docx ? "docx" : "xlsx"}\` command again.`,
+  );
   return out;
 }
 
@@ -204,52 +205,56 @@ description: "Build Word (.docx) and Excel (.xlsx) documents that follow a form,
 
 # Office documents
 
-Word and Excel files are zip packages: never write or edit them by hand, and never change a form file.
-Use the office tool, \`${command}\`:
+Word and Excel files are zip packages: never write or edit them by hand, and never hand in a copy of a form.
+Use the office tool, \`${command}\` (\`${command} --help\` lists every option).
 
-\`\`\`bash
-${command} inspect <form.docx|form.xlsx>      # what a form contains
-${command} read <file.docx|file.xlsx>         # any Word/Excel file as Markdown
-${command} --help                             # all options
-\`\`\`
+## A form or sample is a model, not a file to hand back
+
+When your deliverable names a model (form/sample) file:
+
+1. \`${command} read <model>\` prints it as Markdown. Understand it: which sections or sheets, which tables and columns,
+   how detailed, what tone. Its example rows, hint lines ("(Mô tả …)", "[Nhập …]", "……") are NOT content.
+2. Write your own document for the task in that kind of structure. Adapt freely: keep what fits, add what helps,
+   drop what doesn't apply, improve where you can. Every section gets real content from the task and your teammates' documents.
+3. Build it in the model's look with \`--style <model>\` (below), then \`${command} read <your file>\` and check it.
 
 ## Word (.docx)
 
-1. \`${command} inspect <form.docx>\` lists the form's \`{{placeholders}}\` and styles.
-2. Write the body as Markdown: \`#\`/\`##\` headings, paragraphs, \`-\` and \`1.\` lists (indent two spaces to nest),
-   pipe tables, \`> quotes\`, code blocks, \`---\` rules, \`<!-- pagebreak -->\`, **bold**, *italic*, \`code\`, [links](https://…).
-   Use only the heading levels the form's style list has (heading 1, heading 2, …).
-3. Put values for the other placeholders in a JSON file: \`{"project": "Clinic booking", "version": "1.0"}\`.
-   A value with several lines or Markdown structure fills its paragraph as blocks.
-4. Build: \`${command} docx --template <form.docx> --content draft.md --vars vars.json --out <path.docx>\`
-   The draft replaces the paragraph that holds only \`{{content}}\`; without one it is added at the end.
-5. Check the report it prints: "Still empty" lists placeholders you didn't fill. Then \`${command} read <path.docx>\`.
+Write the whole document as Markdown: \`#\`/\`##\` headings, paragraphs, \`-\` and \`1.\` lists (indent two spaces to nest),
+pipe tables, \`> quotes\`, code blocks, \`---\` rules, \`<!-- pagebreak -->\`, **bold**, *italic*, \`code\`, [links](https://…).
+Include everything the document needs: title, version/history table, sections.
+
+\`\`\`bash
+${command} docx --style <model.docx> --content draft.md --out <path.docx>
+\`\`\`
+
+\`--style\` keeps the model's look (heading, list and table styles, page size, margins, header, footer) and makes
+your Markdown the whole body. Without a model, leave \`--style\` out for a clean default look.
+Only when a form was made with \`{{placeholders}}\` and must be filled in place: \`--template <form.docx> --vars vars.json\`.
 
 ## Excel (.xlsx)
 
-1. \`${command} inspect <form.xlsx>\` shows each sheet, its header row, where data rows start, merges and placeholders.
-2. Write a JSON file:
+Design the workbook as JSON, one entry per sheet, every row filled in:
 
 \`\`\`json
-{
-  "vars":   { "project": "Clinic" },
-  "cells":  { "Summary!B2": "1.0", "Summary!B3": "=COUNTA('Test cases'!A5:A500)" },
-  "tables": [ { "sheet": "Test cases", "start": "A5", "rows": [["TC-01", "Log in", "Enter email and password", "Pass"]] } ],
-  "sheets": [ { "name": "Bugs", "columns": ["ID", "Title", "Severity"], "rows": [["B-1", "Crash on double booking", "High"]] } ]
-}
+{ "sheets": [
+    { "name": "Test cases", "columns": ["ID", "Requirement", "Title", "Steps", "Expected result", "Priority"],
+      "rows": [["TC-01", "REQ-01", "Log in", "1. Open the app\\n2. Enter email and password", "The home page opens", "High"]] },
+    { "name": "Summary", "columns": ["Requirement", "Test cases"], "rows": [["REQ-01", 3]] } ] }
 \`\`\`
 
-   - \`vars\` fill \`{{placeholders}}\` in cells; \`cells\` set single cells ("B2" means the first sheet).
-   - \`tables\` write rows from \`start\` down, one array per row, in the form's column order; each new row copies the
-     start row's style. Use \`"insert": true\` when the form has content (totals, signatures) right under the table.
-   - A string starting with \`=\` is a formula. Numbers stay numbers: write 42, not "42".
-   - \`sheets\` creates sheets with a styled header row (for workbooks without a form).
-3. Build: \`${command} xlsx --template <form.xlsx> --data data.json --out <path.xlsx>\`, then \`${command} read <path.xlsx>\`.
+\`\`\`bash
+${command} xlsx --style <model.xlsx> --data data.json --out <path.xlsx>
+\`\`\`
+
+\`--style\` gives your sheets the model's header and cell look. Numbers stay numbers (42, not "42"); a string starting
+with \`=\` is a formula; \`\\n\` makes a line break in a cell. To fill a form in place instead: \`--template <form.xlsx>\`
+with \`cells\` ("Sheet!B2": value) and \`tables\` ({ "sheet", "start": "A5", "rows" }).
 
 ## Keep drafts
 
-Keep the Markdown/JSON you built from (the deliverables guidance names the draft paths). To change a document,
-edit its draft and build again: the output is always rebuilt from the form, so nothing is lost.
+Keep the Markdown/JSON you built from (your deliverables guidance names the paths). To change a document, edit the
+draft and build again.
 `;
 }
 

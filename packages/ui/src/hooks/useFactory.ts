@@ -33,11 +33,15 @@ export interface FactoryMember {
   deliverables: FactoryDeliverable[];
 }
 
+export type FactoryAutonomy = "ask" | "full";
+
 export interface FactoryTeamInput {
   name: string;
   title: string;
   summary: string;
   workflow: FactoryWorkflowMode;
+  /** "full": agents never stop for permission or answers. Absent means "ask". */
+  autonomy?: FactoryAutonomy;
   members: FactoryMember[];
 }
 
@@ -51,6 +55,7 @@ export interface FactoryTeamSummary {
   title: string;
   summary: string;
   workflow: FactoryWorkflowMode;
+  autonomy?: FactoryAutonomy;
   memberCount: number;
   deliverableCount: number;
   members: Array<{ id: string; title: string; runtime: string; session: string; deliverables: number }>;
