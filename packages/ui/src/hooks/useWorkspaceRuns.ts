@@ -115,6 +115,37 @@ export function useRunOutput(runId: string, member: string | null, deliverable: 
   });
 }
 
+export interface XlsxPreviewSheet {
+  name: string;
+  rows: Array<Array<{ v: string; b?: boolean; bg?: string; al?: string } | null>>;
+  merges: string[];
+  widths: number[];
+  truncated: boolean;
+}
+
+export type OfficePreview =
+  | { kind: "docx"; html: string; messages: string[] }
+  | { kind: "xlsx"; sheets: XlsxPreviewSheet[] };
+
+export function isOfficePath(path: string): boolean {
+  return /\.(docx|xlsx)$/i.test(path);
+}
+
+/** A Word or Excel output rendered for review; refetched when the file changes. */
+export function useRunOfficePreview(runId: string, member: string | null, deliverable: string | null, version: string | null) {
+  return useQuery({
+    queryKey: [...KEY, runId, "office-preview", member, deliverable, version],
+    enabled: !!member && !!deliverable && !!version,
+    retry: false,
+    queryFn: async () => {
+      const res = await fetch(`${outputUrl(runId, member!, deliverable!)}?preview=1`);
+      const body = (await res.json().catch(() => ({}))) as OfficePreview & { message?: string };
+      if (!res.ok) throw new Error(body.message ?? `HTTP ${res.status}`);
+      return body;
+    },
+  });
+}
+
 export function useMemberScreen(runId: string, member: string | null, enabled: boolean) {
   return useQuery({
     queryKey: [...KEY, runId, "screen", member],

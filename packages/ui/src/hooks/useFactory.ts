@@ -10,6 +10,8 @@ export interface FactoryDeliverable {
   path: string;
   outline: string;
   acceptance: string;
+  /** Word/Excel form id (only for .docx / .xlsx paths). */
+  template?: string;
 }
 
 export interface FactoryCustomSkill {

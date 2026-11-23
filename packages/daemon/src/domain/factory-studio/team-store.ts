@@ -14,7 +14,7 @@ import { randomBytes } from "node:crypto";
 import { parse as parseYaml } from "yaml";
 import { resolveAgentRef } from "../agent-resolver.js";
 import { validateAgentSpecFromYaml, validateRigSpecFromYaml } from "../spec-validation-service.js";
-import { generateTeamFiles, sessionFor, type GeneratedFile, type SkillPlacement } from "./generator.js";
+import { generateTeamFiles, sessionFor, type GeneratedFile, type OfficeToolOptions, type SkillPlacement } from "./generator.js";
 import { isFactorySlug, type FactoryTeam, type FactoryTeamInput } from "./team.js";
 
 export interface FactoryTeamSummary {
@@ -45,6 +45,8 @@ export interface FactoryTeamStoreOpts {
   teamsRoot: string;
   sharedAgentDir: string;
   skillSource: SkillSource | null;
+  /** Word/Excel support: the office tool command and the form library. */
+  office?: OfficeToolOptions;
   now?: () => Date;
 }
 
@@ -115,6 +117,7 @@ export class FactoryTeamStore {
       sharedAgentDir: this.opts.sharedAgentDir,
       sharedSkillIds: new Set(shared.keys()),
       resolveSkill,
+      ...(this.opts.office ? { office: this.opts.office } : {}),
     });
     return { team, ...result };
   }

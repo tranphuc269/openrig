@@ -67,6 +67,7 @@ import { growCommand } from "./commands/grow.js";
 import { edgeCommand } from "./commands/edge.js";
 import { reconcileSessionCommand } from "./commands/reconcile-session.js";
 import { envCommand } from "./commands/env.js";
+import { officeCommand } from "./commands/office.js";
 import { askCommand } from "./commands/ask.js";
 import { chatroomCommand } from "./commands/chatroom.js";
 import { specsCommand } from "./commands/specs.js";
@@ -257,6 +258,7 @@ export function createProgram(depsOverride?: ProgramDeps): Command {
   program.addCommand(edgeCommand(depsOverride?.edgeDeps));
   program.addCommand(reconcileSessionCommand(depsOverride?.reconcileSessionDeps));
   program.addCommand(envCommand(depsOverride?.envDeps));
+  program.addCommand(officeCommand());
   program.addCommand(unclaimCommand(depsOverride?.unclaimDeps));
   program.addCommand(releaseCommand(depsOverride?.releaseDeps));
   program.addCommand(launchCommand(depsOverride?.launchDeps));

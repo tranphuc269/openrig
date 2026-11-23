@@ -11,6 +11,7 @@ import {
 } from "../../hooks/useFactory.js";
 import { Button, EmptyState, Field, Pill, Select, TextArea, TextInput } from "./fields.js";
 import { EFFORT_LEVELS, deliverableFromTemplate, uniqueId } from "./presets.js";
+import { DocumentFormat, outlineLabel } from "./DocumentFormat.js";
 
 type Tab = "basics" | "skills" | "deliverables";
 
@@ -277,8 +278,9 @@ function Deliverables({ member, takenPaths, templates, set }: {
                 <Trash2 />
               </Button>
             </div>
-            <Field label="Outline to follow">
-              <TextArea value={d.outline} onChange={(e) => update(i, { ...d, outline: e.target.value })} className="fx-mono min-h-[150px] text-[12.5px]" />
+            <DocumentFormat d={d} onChange={(next) => update(i, next)} />
+            <Field label={outlineLabel(d.path).label}>
+              <TextArea value={d.outline} placeholder={outlineLabel(d.path).placeholder} onChange={(e) => update(i, { ...d, outline: e.target.value })} className="fx-mono min-h-[150px] text-[12.5px]" />
             </Field>
             <Field label="Done when">
               <TextInput value={d.acceptance} onChange={(e) => update(i, { ...d, acceptance: e.target.value })} placeholder="Every requirement maps to a test case" />

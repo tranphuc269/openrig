@@ -17,7 +17,19 @@ export interface FactoryDeliverable {
   path: string;
   outline: string;
   acceptance: string;
+  /** Word/Excel form to follow (office template library id). Only for .docx / .xlsx paths. */
+  template?: string;
 }
+
+/** The kind of file a deliverable is, from its path. */
+export function deliverableFormat(p: string): "markdown" | "docx" | "xlsx" | "other" {
+  if (/\.docx$/i.test(p)) return "docx";
+  if (/\.xlsx$/i.test(p)) return "xlsx";
+  if (/\.(md|markdown)$/i.test(p)) return "markdown";
+  return "other";
+}
+
+const TEMPLATE_ID = /^[a-z0-9][a-z0-9-]{2,80}$/;
 
 export interface FactoryCustomSkill {
   name: string;
@@ -161,12 +173,20 @@ export function parseFactoryTeamInput(raw: unknown): { ok: true; team: FactoryTe
         if (owner) errors.push(`${dp}.path: "${outPath}" is already the output of ${owner}`);
         outputPaths.set(outPath, `${id}/${did}`);
       }
+      const template = str(d.template);
+      if (template) {
+        if (!TEMPLATE_ID.test(template)) errors.push(`${dp}.template: invalid form id "${template}"`);
+        else if (deliverableFormat(outPath) !== "docx" && deliverableFormat(outPath) !== "xlsx") {
+          errors.push(`${dp}.template: a form can only be used for a .docx or .xlsx document`);
+        }
+      }
       return {
         id: did,
         title: shortText(d.title, `${dp}.title`, errors, { required: true }),
         path: outPath,
         outline: longText(d.outline, `${dp}.outline`, errors),
         acceptance: longText(d.acceptance, `${dp}.acceptance`, errors),
+        ...(template ? { template } : {}),
       };
     });
 

@@ -21,6 +21,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { MarkdownViewer } from "../markdown/MarkdownViewer.js";
+import { OfficePreview } from "./OfficePreview.js";
 import {
   outputUrl,
   useMemberScreen,
@@ -28,6 +29,8 @@ import {
   useReview,
   useRunDetail,
   useRunOutput,
+  useRunOfficePreview,
+  isOfficePath,
   useStopRun,
   type RunDeliverable,
   type RunDetail,
@@ -278,7 +281,10 @@ function MemberCard({ member, selection, onSelect, onSelectMember }: {
 }
 
 function OutputPanel({ runId, member, deliverable, canRework }: { runId: string; member: RunMember; deliverable: RunDeliverable; canRework: boolean }) {
-  const output = useRunOutput(runId, member.id, deliverable.id, deliverable.exists ? deliverable.modifiedAt : null);
+  const office = isOfficePath(deliverable.path);
+  const version = deliverable.exists ? deliverable.modifiedAt : null;
+  const output = useRunOutput(runId, member.id, deliverable.id, office ? null : version);
+  const officePreview = useRunOfficePreview(runId, member.id, deliverable.id, office ? version : null);
   const review = useReview(runId);
   const [feedback, setFeedback] = useState("");
   const [asking, setAsking] = useState(false);
@@ -378,6 +384,17 @@ function OutputPanel({ runId, member, deliverable, canRework }: { runId: string;
               </div>
             ) : null}
 
+            {office ? (
+              <div data-testid="workspace-output-content">
+                {officePreview.isLoading ? (
+                  <p className="fx-small">Loading…</p>
+                ) : officePreview.error ? (
+                  <p className="text-[13px] text-[color:var(--fx-danger)]">{(officePreview.error as Error).message}</p>
+                ) : officePreview.data ? (
+                  <OfficePreview preview={officePreview.data} />
+                ) : null}
+              </div>
+            ) : (
             <div className="fx-doc max-h-[640px] overflow-auto rounded-[12px] border border-[color:var(--fx-border)] bg-[color:var(--fx-surface)] p-5" data-testid="workspace-output-content">
               {output.isLoading ? (
                 <p className="fx-small">Loading…</p>
@@ -389,6 +406,7 @@ function OutputPanel({ runId, member, deliverable, canRework }: { runId: string;
                 <pre className="fx-pre whitespace-pre-wrap">{output.data}</pre>
               )}
             </div>
+            )}
           </>
         ) : (
           <EmptyState icon={<PenLine />} title="Not written yet">

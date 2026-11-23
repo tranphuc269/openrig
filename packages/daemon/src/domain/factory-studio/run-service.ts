@@ -69,6 +69,8 @@ export interface RunDetail {
 }
 
 const MAX_DOC_BYTES = 2 * 1024 * 1024;
+/** Word and Excel files carry images and styles, so they may be larger. */
+const MAX_OFFICE_BYTES = 25 * 1024 * 1024;
 
 export function validateProjectDir(raw: unknown): string {
   const dir = typeof raw === "string" ? raw.trim() : "";
@@ -341,7 +343,9 @@ export class FactoryRunService {
       throw new RunError(404, "not_written", `${d.title} has not been written yet (${d.path})`);
     }
     if (!stat.isFile()) throw new RunError(404, "not_written", `${d.path} is not a file`);
-    if (stat.size > MAX_DOC_BYTES) throw new RunError(413, "too_large", `${d.path} is larger than 2 MB`);
+    const office = /\.(docx|xlsx)$/i.test(d.path);
+    const limit = office ? MAX_OFFICE_BYTES : MAX_DOC_BYTES;
+    if (stat.size > limit) throw new RunError(413, "too_large", `${d.path} is larger than ${limit / 1024 / 1024} MB`);
     return { content: fs.readFileSync(abs), fileName: path.basename(d.path), path: d.path };
   }
 
@@ -367,7 +371,9 @@ export class FactoryRunService {
         `The person reviewed "${d.title}" (${d.path}) and asks for changes:`,
         feedback,
         "",
-        "Update the same file. Add or update a \"Revision notes\" section at the top listing what you changed, then report done.",
+        /\.(docx|xlsx)$/i.test(d.path)
+          ? "Update its draft (see your deliverables guidance) and rebuild the same file with `rig office`. Add or update a \"Revision notes\" section listing what you changed, then report done."
+          : "Update the same file. Add or update a \"Revision notes\" section at the top listing what you changed, then report done.",
         "Do not hand off to the next member again unless the change affects their documents.",
       ].join("\n"));
     }

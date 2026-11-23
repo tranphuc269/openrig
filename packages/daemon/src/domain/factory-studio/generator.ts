@@ -11,7 +11,8 @@
 
 import { stringify } from "yaml";
 import { deriveCanonicalSessionName } from "../session-name.js";
-import type { FactoryMember, FactoryTeam } from "./team.js";
+import { shellQuote } from "../../adapters/shell-quote.js";
+import { deliverableFormat, type FactoryDeliverable, type FactoryMember, type FactoryTeam } from "./team.js";
 
 export const FACTORY_POD_ID = "team";
 
@@ -33,6 +34,15 @@ export interface GenerateOptions {
   sharedSkillIds: ReadonlySet<string>;
   /** Resolve a library skill id; null when it no longer exists. */
   resolveSkill: (libraryId: string, sharedSkillIds: ReadonlySet<string>) => SkillPlacement | null;
+  /** The office tool agents use for Word/Excel documents. Without it, such documents can't be declared. */
+  office?: OfficeToolOptions;
+}
+
+export interface OfficeToolOptions {
+  /** Shell command that runs the office tool on agents' PATH: `rig office`. */
+  command: string;
+  /** Form library id → absolute path, format and display name; null when it was deleted. */
+  resolveTemplate: (id: string) => { path: string; format: "docx" | "xlsx"; name: string } | null;
 }
 
 export interface GenerateResult {
@@ -81,7 +91,14 @@ function rigYaml(team: FactoryTeam): string {
   });
 }
 
-function cultureMd(team: FactoryTeam): string {
+function teamUsesOffice(team: FactoryTeam): boolean {
+  return team.members.some((m) => m.deliverables.some((d) => {
+    const f = deliverableFormat(d.path);
+    return f === "docx" || f === "xlsx";
+  }));
+}
+
+function cultureMd(team: FactoryTeam, office?: OfficeToolOptions): string {
   return [
     `# ${team.title} — team culture`,
     "",
@@ -92,22 +109,148 @@ function cultureMd(team: FactoryTeam): string {
     "  write the disagreement under an \"Open questions\" heading and tell the person.",
     "- Never invent facts the task did not give you. Mark assumptions as assumptions.",
     "- When the person asks for rework, change the same files and list what changed at the top under \"Revision notes\".",
+    ...(office && teamUsesOffice(team) ? [
+      "- Word (.docx) and Excel (.xlsx) documents are built and read with the office tool (skill `office-docs`).",
+      `  Read a teammate's one with: \`${office.command} read <path>\``,
+    ] : []),
     "",
   ].join("\n");
 }
 
-function deliverablesMd(member: FactoryMember): string {
+function draftBase(member: FactoryMember, d: FactoryDeliverable): string {
+  return `.factory/drafts/${member.id}/${d.id}`;
+}
+
+function officeSteps(member: FactoryMember, d: FactoryDeliverable, office: OfficeToolOptions, form: { path: string; name: string } | null): string[] {
+  const draft = draftBase(member, d);
+  const tpl = form ? ` --template ${shellQuote(form.path)}` : "";
+  const out: string[] = [];
+  if (deliverableFormat(d.path) === "docx") {
+    out.push(
+      "- **Format:** Word (.docx). Build it with the office tool (skill `office-docs`); never write the .docx by hand.",
+      form
+        ? `- **Form to follow:** ${form.name} at \`${form.path}\`. Keep its layout: its styles, header, footer and fixed text stay as they are; you fill it.`
+        : "- **Form:** none given; the tool uses a clean default layout.",
+      "",
+      "How to build it:",
+      "",
+      "```bash",
+      ...(form ? [`${office.command} inspect ${shellQuote(form.path)}   # see the form's {{placeholders}} and styles first`] : []),
+      `# 1. Write the content as Markdown in ${draft}.md (headings, lists, tables).`,
+      ...(form ? [`# 2. Put values for the form's other {{placeholders}} in ${draft}.vars.json, e.g. {"project": "…"}`] : []),
+      `${office.command} docx${tpl} --content ${draft}.md${form ? ` --vars ${draft}.vars.json` : ""} --out ${shellQuote(d.path)}`,
+      `${office.command} read ${shellQuote(d.path)}   # check the result`,
+      "```",
+      "",
+      "To change the document later, edit the draft and run the same `docx` command again.",
+    );
+  } else {
+    out.push(
+      "- **Format:** Excel (.xlsx). Build it with the office tool (skill `office-docs`); never write the .xlsx by hand.",
+      form
+        ? `- **Form to follow:** ${form.name} at \`${form.path}\`. Keep its sheets, headers, styles and formulas; write your rows where the form expects them.`
+        : "- **Form:** none given; describe each sheet with `sheets` (name, columns, rows).",
+      "",
+      "How to build it:",
+      "",
+      "```bash",
+      ...(form ? [`${office.command} inspect ${shellQuote(form.path)}   # see the sheets, header rows and where rows start`] : []),
+      `# Write the values as JSON in ${draft}.json (vars, cells, tables${form ? "" : ", sheets"}; see the office-docs skill).`,
+      `${office.command} xlsx${tpl} --data ${draft}.json --out ${shellQuote(d.path)}`,
+      `${office.command} read ${shellQuote(d.path)}   # check the result`,
+      "```",
+      "",
+      "To change the workbook later, edit the JSON and run the same `xlsx` command again.",
+    );
+  }
+  return out;
+}
+
+function deliverablesMd(member: FactoryMember, office: OfficeToolOptions | undefined, errors: string[]): string {
   if (member.deliverables.length === 0) {
     return "# Your deliverables\n\nNo documents are declared for you. Report your result as a message.\n";
   }
   const parts = ["# Your deliverables", "", "Write each document below at exactly the path shown, relative to your working directory.", ""];
   for (const d of member.deliverables) {
+    const format = deliverableFormat(d.path);
     parts.push(`## ${d.title}`, "", `- **Path:** \`${d.path}\``, `- **Deliverable id:** \`${d.id}\``);
     if (d.acceptance) parts.push(`- **Done when:** ${d.acceptance}`);
-    if (d.outline) parts.push("", "Follow this outline:", "", "```markdown", d.outline, "```");
+    if (format === "docx" || format === "xlsx") {
+      let form: { path: string; name: string } | null = null;
+      if (d.template) {
+        const resolved = office?.resolveTemplate(d.template) ?? null;
+        if (!resolved) errors.push(`members.${member.id}.deliverables.${d.id}.template: the form "${d.template}" no longer exists; pick or upload it again`);
+        else if (resolved.format !== format) errors.push(`members.${member.id}.deliverables.${d.id}.template: ${resolved.name} is a .${resolved.format} form but the document is .${format}`);
+        else form = resolved;
+      }
+      if (office) parts.push(...officeSteps(member, d, office, form));
+      else errors.push(`members.${member.id}.deliverables.${d.id}.path: Word and Excel documents need the office tool, which isn't available`);
+    }
+    if (d.outline) {
+      const label = format === "xlsx" ? "What goes in the workbook:" : format === "docx" ? "Content outline (the Markdown draft follows it):" : "Follow this outline:";
+      parts.push("", label, "", "```markdown", d.outline, "```");
+    }
     parts.push("");
   }
   return parts.join("\n");
+}
+
+/** The office-docs skill: how to build and read Word and Excel documents. */
+export function officeSkillMd(command: string): string {
+  return `---
+name: office-docs
+description: "Build Word (.docx) and Excel (.xlsx) documents that follow a form, and read teammates' Word/Excel files. Use for every .docx or .xlsx deliverable."
+---
+
+# Office documents
+
+Word and Excel files are zip packages: never write or edit them by hand, and never change a form file.
+Use the office tool, \`${command}\`:
+
+\`\`\`bash
+${command} inspect <form.docx|form.xlsx>      # what a form contains
+${command} read <file.docx|file.xlsx>         # any Word/Excel file as Markdown
+${command} --help                             # all options
+\`\`\`
+
+## Word (.docx)
+
+1. \`${command} inspect <form.docx>\` lists the form's \`{{placeholders}}\` and styles.
+2. Write the body as Markdown: \`#\`/\`##\` headings, paragraphs, \`-\` and \`1.\` lists (indent two spaces to nest),
+   pipe tables, \`> quotes\`, code blocks, \`---\` rules, \`<!-- pagebreak -->\`, **bold**, *italic*, \`code\`, [links](https://…).
+   Use only the heading levels the form's style list has (heading 1, heading 2, …).
+3. Put values for the other placeholders in a JSON file: \`{"project": "Clinic booking", "version": "1.0"}\`.
+   A value with several lines or Markdown structure fills its paragraph as blocks.
+4. Build: \`${command} docx --template <form.docx> --content draft.md --vars vars.json --out <path.docx>\`
+   The draft replaces the paragraph that holds only \`{{content}}\`; without one it is added at the end.
+5. Check the report it prints: "Still empty" lists placeholders you didn't fill. Then \`${command} read <path.docx>\`.
+
+## Excel (.xlsx)
+
+1. \`${command} inspect <form.xlsx>\` shows each sheet, its header row, where data rows start, merges and placeholders.
+2. Write a JSON file:
+
+\`\`\`json
+{
+  "vars":   { "project": "Clinic" },
+  "cells":  { "Summary!B2": "1.0", "Summary!B3": "=COUNTA('Test cases'!A5:A500)" },
+  "tables": [ { "sheet": "Test cases", "start": "A5", "rows": [["TC-01", "Log in", "Enter email and password", "Pass"]] } ],
+  "sheets": [ { "name": "Bugs", "columns": ["ID", "Title", "Severity"], "rows": [["B-1", "Crash on double booking", "High"]] } ]
+}
+\`\`\`
+
+   - \`vars\` fill \`{{placeholders}}\` in cells; \`cells\` set single cells ("B2" means the first sheet).
+   - \`tables\` write rows from \`start\` down, one array per row, in the form's column order; each new row copies the
+     start row's style. Use \`"insert": true\` when the form has content (totals, signatures) right under the table.
+   - A string starting with \`=\` is a formula. Numbers stay numbers: write 42, not "42".
+   - \`sheets\` creates sheets with a styled header row (for workbooks without a form).
+3. Build: \`${command} xlsx --template <form.xlsx> --data data.json --out <path.xlsx>\`, then \`${command} read <path.xlsx>\`.
+
+## Keep drafts
+
+Keep the Markdown/JSON you built from (the deliverables guidance names the draft paths). To change a document,
+edit its draft and build again: the output is always rebuilt from the form, so nothing is lost.
+`;
 }
 
 function roleMd(team: FactoryTeam, member: FactoryMember): string {
@@ -204,6 +347,10 @@ function agentYaml(team: FactoryTeam, member: FactoryMember, opts: GenerateOptio
     const id = addLocal(custom.name);
     files.set(`${base}/skills/${id}/SKILL.md`, { kind: "text", content: customSkillMd(custom) });
   }
+  if (opts.office && teamUsesOffice(team)) {
+    const id = addLocal("office-docs");
+    files.set(`${base}/skills/${id}/SKILL.md`, { kind: "text", content: officeSkillMd(opts.office.command) });
+  }
 
   return yamlDoc(`Factory Studio member: ${member.title}`, {
     name: member.id,
@@ -244,11 +391,11 @@ export function generateTeamFiles(team: FactoryTeam, opts: GenerateOptions): Gen
   const errors: string[] = [];
   files.set("factory.json", { kind: "text", content: `${JSON.stringify(team, null, 2)}\n` });
   files.set("rig.yaml", { kind: "text", content: rigYaml(team) });
-  files.set("CULTURE.md", { kind: "text", content: cultureMd(team) });
+  files.set("CULTURE.md", { kind: "text", content: cultureMd(team, opts.office) });
   for (const member of team.members) {
     const base = `agents/${member.id}`;
     files.set(`${base}/guidance/role.md`, { kind: "text", content: roleMd(team, member) });
-    files.set(`${base}/guidance/deliverables.md`, { kind: "text", content: deliverablesMd(member) });
+    files.set(`${base}/guidance/deliverables.md`, { kind: "text", content: deliverablesMd(member, opts.office, errors) });
     files.set(`${base}/agent.yaml`, { kind: "text", content: agentYaml(team, member, opts, errors, files) });
   }
   return { files, errors };

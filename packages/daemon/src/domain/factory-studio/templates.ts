@@ -114,4 +114,29 @@ export const DELIVERABLE_TEMPLATES: DeliverableTemplate[] = [
     ].join("\n"),
     acceptance: "A new engineer can deploy and roll back by following the steps alone.",
   },
+  {
+    id: "test-cases-xlsx",
+    title: "Test Cases (Excel)",
+    path: "docs/testing/test-cases.xlsx",
+    suggestedRole: "qa",
+    outline: [
+      "Sheet \"Test cases\": one row per test case with columns ID, Requirement, Title, Preconditions, Steps, Expected result, Priority, Status.",
+      "Sheet \"Summary\": number of test cases per requirement and per priority.",
+    ].join("\n"),
+    acceptance: "Every requirement has at least one test case; every row has steps and an expected result.",
+  },
+  {
+    id: "report-docx",
+    title: "Report (Word)",
+    path: "docs/reports/report.docx",
+    suggestedRole: "writer",
+    outline: [
+      "# Summary",
+      "## Background",
+      "## Findings",
+      "## Recommendations",
+      "## Next steps",
+    ].join("\n"),
+    acceptance: "Fits the uploaded form; every section is filled; no placeholder is left empty.",
+  },
 ];

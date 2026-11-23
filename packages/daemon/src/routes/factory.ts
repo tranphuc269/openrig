@@ -7,6 +7,8 @@
 //   POST   /api/factory/teams              create (409 when the name exists)
 //   PUT    /api/factory/teams/:name        create or replace
 //   DELETE /api/factory/teams/:name        remove the team folder
+//   GET    /api/factory/office-templates   Word/Excel forms (POST raw file + x-file-name to upload;
+//          GET/:id file, GET /:id/inspect placeholders/sheets, DELETE /:id)
 //
 // A saved team is a normal RigSpec under the user spec library root, so the
 // spec library is rescanned after every write and `rig up <name>` launches it.
@@ -21,6 +23,11 @@ import { FactoryRunStore } from "../domain/factory-studio/run-store.js";
 import { FactoryRunService, RunError, type Dispatch } from "../domain/factory-studio/run-service.js";
 import { checkFolder, createFolder, listFolders, readReadiness, registerDefaultPerson, type ShellLookup } from "../domain/factory-studio/readiness.js";
 import { AgentApiSettingsError, clearAgentApiKey, readAgentApiSettings, saveAgentApiSettings, testAgentApi } from "../domain/agent-api-settings.js";
+import { OfficeTemplateError, OfficeTemplateStore, MAX_TEMPLATE_BYTES, officeTemplatesDir } from "../domain/factory-studio/office/office-templates.js";
+import { inspectDocx } from "../domain/factory-studio/office/docx.js";
+import { inspectXlsx } from "../domain/factory-studio/office/xlsx.js";
+import { previewOffice } from "../domain/factory-studio/office/preview.js";
+import type { OfficeToolOptions } from "../domain/factory-studio/generator.js";
 import type { SkillLibraryDiscoveryService } from "../domain/skill-library-discovery.js";
 import type { SpecLibraryService } from "../domain/spec-library-service.js";
 
@@ -39,6 +46,8 @@ export interface FactoryRoutesOpts {
   agentApiHome?: string;
   /** Test hook for the connection test. */
   agentApiFetch?: typeof fetch;
+  /** Folder of uploaded Word/Excel forms. Default: $OPENRIG_HOME/factory/office-templates. */
+  officeTemplatesDir?: string;
   /** Test hooks for the launch wait. */
   runTiming?: { pollMs?: number; readyTimeoutMs?: number; sleep?: (ms: number) => Promise<void> };
 }
@@ -74,10 +83,91 @@ export function factoryRoutes(opts: FactoryRoutesOpts = {}): Hono {
   const teamsRoot = opts.teamsRoot ?? (() => nodePath.join(getDefaultOpenRigPath("specs"), "factory"));
   const sharedAgentDir = opts.sharedAgentDir ?? DEFAULT_SHARED_AGENT_DIR;
 
+  const forms = new OfficeTemplateStore(opts.officeTemplatesDir ?? officeTemplatesDir());
+  const office: OfficeToolOptions = {
+    command: "rig office",
+    resolveTemplate: (id) => {
+      const meta = forms.get(id);
+      const file = meta ? forms.filePath(id) : null;
+      return meta && file ? { path: file, format: meta.format, name: meta.name } : null;
+    },
+  };
+
   const storeFor = (c: Context) => new FactoryTeamStore({
     teamsRoot: teamsRoot(),
     sharedAgentDir,
     skillSource: services(c).skills ?? null,
+    office,
+  });
+
+  const formError = (c: Context, err: unknown): Response => {
+    if (err instanceof OfficeTemplateError) return c.json({ error: err.code, message: err.message }, err.status);
+    return c.json({ error: "form_failed", message: err instanceof Error ? err.message : String(err) }, 400);
+  };
+
+  // ── Word/Excel forms ──────────────────────────────────────────────────
+  router.get("/office-templates", (c) => c.json(forms.list()));
+
+  router.post("/office-templates", async (c) => {
+    const declared = Number(c.req.header("content-length") ?? "0");
+    if (declared > MAX_TEMPLATE_BYTES) return c.json({ error: "too_large", message: "Forms can be at most 10 MB" }, 413);
+    let name = c.req.header("x-file-name") ?? "";
+    try { name = decodeURIComponent(name); } catch { /* keep as sent */ }
+    try {
+      const buf = Buffer.from(await c.req.arrayBuffer());
+      return c.json(await forms.save(name, buf), 201);
+    } catch (err) {
+      return formError(c, err);
+    }
+  });
+
+  router.get("/office-templates/:id", (c) => {
+    try {
+      const { meta, content } = forms.read(c.req.param("id"));
+      const type = meta.format === "docx"
+        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+      return new Response(new Uint8Array(content), {
+        status: 200,
+        headers: {
+          "content-type": type,
+          "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(meta.name)}`,
+          "cache-control": "no-store",
+          "x-content-type-options": "nosniff",
+        },
+      });
+    } catch (err) {
+      return formError(c, err);
+    }
+  });
+
+  router.get("/office-templates/:id/inspect", async (c) => {
+    try {
+      const { meta, content } = forms.read(c.req.param("id"));
+      return c.json(meta.format === "docx"
+        ? { format: "docx", docx: await inspectDocx(content) }
+        : { format: "xlsx", xlsx: await inspectXlsx(content) });
+    } catch (err) {
+      return formError(c, err);
+    }
+  });
+
+  router.delete("/office-templates/:id", (c) => {
+    const id = c.req.param("id");
+    const store = storeFor(c);
+    const usedBy = store.list().flatMap((summary) => {
+      const team = store.read(summary.name);
+      return team?.members.some((m) => m.deliverables.some((d) => d.template === id)) ? [team.title] : [];
+    });
+    if (usedBy.length && c.req.query("force") !== "1") {
+      return c.json({ error: "template_in_use", message: `Used by ${usedBy.join(", ")}. Pick another form there first.`, teams: usedBy }, 409);
+    }
+    try {
+      forms.remove(id);
+      return c.json({ ok: true });
+    } catch (err) {
+      return formError(c, err);
+    }
   });
 
   /** A team name must not shadow a rig from another library root (`rig up <name>` would be ambiguous). */
@@ -230,9 +320,17 @@ export function factoryRoutes(opts: FactoryRoutesOpts = {}): Hono {
   router.get("/runs/:id/outputs/:member/:deliverable", (c) => withRuns(c, (svc) => {
     const doc = svc.readDeliverable(c.req.param("id"), c.req.param("member"), c.req.param("deliverable"));
     const download = c.req.query("download") === "1";
+    const office = /\.(docx|xlsx)$/i.test(doc.fileName);
+    if (office && c.req.query("preview") === "1") {
+      return previewOffice(doc.fileName, doc.content)
+        .then((preview) => c.json(preview))
+        .catch((err: Error) => c.json({ error: "preview_failed", message: err.message }, 422));
+    }
     const type = /\.(md|markdown)$/i.test(doc.fileName) ? "text/markdown; charset=utf-8"
       : /\.json$/i.test(doc.fileName) ? "application/json; charset=utf-8"
       : /\.(ya?ml)$/i.test(doc.fileName) ? "text/yaml; charset=utf-8"
+      : /\.docx$/i.test(doc.fileName) ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      : /\.xlsx$/i.test(doc.fileName) ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       : "text/plain; charset=utf-8";
     const headers: Record<string, string> = { "content-type": type, "cache-control": "no-store", "x-content-type-options": "nosniff" };
     if (download) headers["content-disposition"] = `attachment; filename="${doc.fileName.replace(/[^A-Za-z0-9._-]/g, "_")}"`;
