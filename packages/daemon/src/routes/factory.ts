@@ -19,6 +19,7 @@ import { parseFactoryTeamInput } from "../domain/factory-studio/team.js";
 import { FactoryStoreError, FactoryTeamStore } from "../domain/factory-studio/team-store.js";
 import { FactoryRunStore } from "../domain/factory-studio/run-store.js";
 import { FactoryRunService, RunError, type Dispatch } from "../domain/factory-studio/run-service.js";
+import { checkFolder, createFolder, listFolders, readReadiness, registerDefaultPerson, type ShellLookup } from "../domain/factory-studio/readiness.js";
 import type { SkillLibraryDiscoveryService } from "../domain/skill-library-discovery.js";
 import type { SpecLibraryService } from "../domain/spec-library-service.js";
 
@@ -31,6 +32,8 @@ export interface FactoryRoutesOpts {
   runsRoot?: string;
   /** In-process call into the daemon's own /api routes (launch, send, down). Runs are disabled without it. */
   dispatch?: Dispatch;
+  /** Test hooks for readiness: tool lookup and the OpenRig home the person is registered in. */
+  readiness?: { lookup?: ShellLookup; home?: string };
   /** Test hooks for the launch wait. */
   runTiming?: { pollMs?: number; readyTimeoutMs?: number; sleep?: (ms: number) => Promise<void> };
 }
@@ -232,6 +235,43 @@ export function factoryRoutes(opts: FactoryRoutesOpts = {}): Hono {
   }));
 
   router.get("/runs/:id/screen/:member", (c) => withRuns(c, async (svc) => c.json(await svc.screen(c.req.param("id"), c.req.param("member")))));
+
+  // ── Readiness and folder picker ───────────────────────────────────────
+  //   GET  /readiness                       checks a team needs (tools, sign-in, person, tracking)
+  //   POST /readiness/person {entityId, displayName}   register you as the default person agents ask
+  //   GET  /fs/folders?path=                sub-folders of a folder (default: home), for the folder picker
+  //   GET  /fs/check?path=                  is this a usable project folder
+  //   POST /fs/folders {path}               create a new project folder inside home
+  router.get("/readiness", async (c) => {
+    if (!dispatch) return c.json({ error: "readiness_unavailable", message: "Readiness is not wired on this daemon" }, 503);
+    return c.json(await readReadiness({ dispatch, lookup: opts.readiness?.lookup }));
+  });
+  router.post("/readiness/person", async (c) => {
+    const b = await body(c);
+    try {
+      const res = await registerDefaultPerson({ entityId: b.entityId, displayName: b.displayName }, opts.readiness?.home);
+      return res.ok ? c.json(res, 201) : c.json({ error: "person_not_registered", message: res.error }, 400);
+    } catch (err) {
+      return c.json({ error: "person_not_registered", message: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+  router.get("/fs/folders", (c) => {
+    try {
+      return c.json(listFolders(c.req.query("path")));
+    } catch (err) {
+      return c.json({ error: "folder_unreadable", message: err instanceof Error ? err.message : String(err) }, 400);
+    }
+  });
+  router.get("/fs/check", (c) => c.json(checkFolder(c.req.query("path"))));
+  router.post("/fs/folders", async (c) => {
+    const b = await body(c);
+    try {
+      const res = createFolder(b.path);
+      return res.ok ? c.json(res, 201) : c.json({ error: "folder_not_created", message: res.error }, 400);
+    } catch (err) {
+      return c.json({ error: "folder_not_created", message: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
 
   router.post("/runs/:id/stop", (c) => withRuns(c, async (svc) => c.json(await svc.stop(c.req.param("id")))));
 

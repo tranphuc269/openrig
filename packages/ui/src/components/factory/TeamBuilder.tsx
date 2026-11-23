@@ -35,14 +35,14 @@ import {
 import { cn } from "../../lib/utils.js";
 import { Alert, Avatar, Button, Field, Page, PageHeader, Panel, Pill, TextArea, TextInput } from "./fields.js";
 import { MemberEditor } from "./MemberEditor.js";
-import { MEMBER_PRESETS, emptyTeam, memberFromPreset } from "./presets.js";
+import { MEMBER_PRESETS, TEAM_TEMPLATES, emptyTeam, memberFromPreset, teamFromTemplate } from "./presets.js";
 
 function stripTimestamps(t: FactoryTeamInput & { createdAt?: string; updatedAt?: string }): FactoryTeamInput {
   const { name, title, summary, workflow, members } = t;
   return { name, title, summary, workflow, members };
 }
 
-export function TeamBuilder({ teamName }: { teamName?: string }) {
+export function TeamBuilder({ teamName, templateId }: { teamName?: string; templateId?: string }) {
   const isNew = !teamName;
   const navigate = useNavigate();
   const existing = useFactoryTeam(teamName ?? null);
@@ -67,6 +67,19 @@ export function TeamBuilder({ teamName }: { teamName?: string }) {
       setNameTouched(true);
     }
   }, [existing.data, dirty]);
+
+  // Starting from a gallery template: fill the team once the document templates are loaded.
+  const [templateApplied, setTemplateApplied] = useState(false);
+  useEffect(() => {
+    if (!isNew || templateApplied || !templateId || templates.length === 0) return;
+    const t = TEAM_TEMPLATES.find((x) => x.id === templateId);
+    if (t) {
+      setTeam(teamFromTemplate(t, templates));
+      setDirty(true);
+      setSelected(0);
+    }
+    setTemplateApplied(true);
+  }, [isNew, templateApplied, templateId, templates]);
 
   /** Functional update, so rapid successive edits never read a stale team. */
   const edit = (fn: (prev: FactoryTeamInput) => FactoryTeamInput) => {

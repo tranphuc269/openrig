@@ -38,6 +38,7 @@ import {
   Factory,
   FileText,
   Gauge,
+  ListChecks,
   Folder,
   LayoutDashboard,
   Network,
@@ -177,6 +178,15 @@ const RAIL_ICONS: RailIconSpec[] = [
     icon: FileText,
     activeWhen: (p) => p.startsWith("/specs") || p.startsWith("/plugins"),
     testId: "rail-specs",
+    group: "destination",
+  },
+  {
+    id: "setup",
+    label: "Get ready",
+    to: "/setup",
+    icon: ListChecks,
+    activeWhen: (p) => p.startsWith("/setup"),
+    testId: "rail-setup",
     group: "destination",
   },
   {

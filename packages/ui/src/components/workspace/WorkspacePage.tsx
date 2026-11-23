@@ -6,6 +6,9 @@ import { useFactoryTeams } from "../../hooks/useFactory.js";
 import { useRuns, useStartRun, type FactoryRun } from "../../hooks/useWorkspaceRuns.js";
 import { Alert, Avatar, Button, EmptyState, Field, Page, PageHeader, Pill, TextArea, TextInput, type Tone } from "../factory/fields.js";
 import { timeAgo } from "./status.js";
+import { ReadinessBanner } from "../setup/SetupPage.js";
+import { ProjectFolderField } from "./FolderPicker.js";
+import { useFolderCheck } from "../../hooks/useReadiness.js";
 
 const STATUS: Record<FactoryRun["status"], { label: string; tone: Tone }> = {
   launching: { label: "Starting", tone: "info" },
@@ -94,13 +97,17 @@ export function NewTaskPage() {
   const navigate = useNavigate();
   const { data: teams = [], isLoading } = useFactoryTeams();
   const start = useStartRun();
+  const { data: pastRuns = [] } = useRuns();
+  const recentFolders = [...new Set(pastRuns.map((r) => r.projectDir))];
   const [team, setTeam] = useState<string>(search.team ?? "");
   const [task, setTask] = useState("");
   const [projectDir, setProjectDir] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const selected = teams.find((t) => t.name === team);
-  const canStart = !!selected && task.trim().length > 0 && projectDir.trim().startsWith("/") && !start.isPending;
+  const folder = useFolderCheck(projectDir);
+  const folderOk = folder.data?.valid === true && folder.data.path.replace(/\/$/, "") === projectDir.trim().replace(/\/$/, "");
+  const canStart = !!selected && task.trim().length > 0 && folderOk && !start.isPending;
 
   const onStart = () => {
     setError(null);
@@ -135,6 +142,8 @@ export function NewTaskPage() {
         title="New task"
         subtitle="Three quick steps and your team gets to work."
       />
+
+      <ReadinessBanner />
 
       <section className="fx-card mb-4 p-5">
         <Step n={1} title="Choose a team" done={!!selected} />
@@ -191,19 +200,12 @@ export function NewTaskPage() {
       </section>
 
       <section className="fx-card mb-5 p-5">
-        <Step n={3} title="Where should the team work?" done={projectDir.trim().startsWith("/")} />
-        <Field label="Project folder" hint="A full path on this computer. The documents are saved here, for example docs/design/system-design.md.">
-          <div className="relative">
-            <FolderOpen className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[color:var(--fx-subtle)]" />
-            <TextInput
-              data-testid="workspace-project-dir"
-              value={projectDir}
-              onChange={(e) => setProjectDir(e.target.value)}
-              placeholder="/Users/you/projects/clinic-booking"
-              className="fx-mono pl-9"
-            />
-          </div>
-        </Field>
+        <Step n={3} title="Where should the team work?" done={folderOk} />
+        <div className="flex flex-col gap-1.5">
+          <span className="fx-label">Project folder</span>
+          <ProjectFolderField value={projectDir} onChange={setProjectDir} recent={recentFolders} />
+          <span className="fx-hint">The team works here and saves its documents in it, for example docs/design/system-design.md.</span>
+        </div>
       </section>
 
       {error ? (

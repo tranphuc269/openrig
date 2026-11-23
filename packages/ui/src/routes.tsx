@@ -53,6 +53,7 @@ import { TeamBuilder } from "./components/factory/TeamBuilder.js";
 import { WorkspacePage as AgentWorkspacePage, NewTaskPage } from "./components/workspace/WorkspacePage.js";
 import { RunPage } from "./components/workspace/RunPage.js";
 import { UsagePage } from "./components/usage/UsagePage.js";
+import { SetupPage } from "./components/setup/SetupPage.js";
 import { SettingsCenter } from "./components/system/SettingsCenter.js";
 import { PoliciesPage } from "./components/system/PoliciesPage.js";
 import { LogPage } from "./components/system/LogPage.js";
@@ -315,7 +316,12 @@ const studioRoute = createRoute({
 const studioNewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/studio/new",
-  component: () => <TeamBuilder />,
+  validateSearch: (search: Record<string, unknown>): { template?: string } =>
+    typeof search.template === "string" ? { template: search.template } : {},
+  component: () => {
+    const { template } = useSearch({ from: "/studio/new" });
+    return <TeamBuilder key={template ?? "blank"} templateId={template} />;
+  },
 });
 const studioTeamRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -324,6 +330,13 @@ const studioTeamRoute = createRoute({
     const { teamName } = useParams({ from: "/studio/teams/$teamName" });
     return <TeamBuilder key={teamName} teamName={teamName} />;
   },
+});
+
+// Get ready — readiness checks with quick fixes.
+const setupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/setup",
+  component: SetupPage,
 });
 
 // Usage & cost — plan limits and per-agent cost.
@@ -622,6 +635,7 @@ export const routeTree = rootRoute.addChildren([
   agentWorkspaceNewRoute,
   agentWorkspaceRunRoute,
   usageRoute,
+  setupRoute,
   settingsPoliciesRoute,
   settingsLogRoute,
   settingsStatusRoute,
