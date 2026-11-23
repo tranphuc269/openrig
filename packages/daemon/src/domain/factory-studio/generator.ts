@@ -146,13 +146,22 @@ function officeSteps(member: FactoryMember, d: FactoryDeliverable, office: Offic
     );
   }
   out.push("", "How to build it:", "", "```bash");
-  if (form) out.push(`${office.command} read ${shellQuote(form.path)}   # understand the model first`);
-  if (docx) {
+  if (docx && form) {
     out.push(
-      `# Write the whole document as Markdown in ${draft}.md: title, version/history table if the model has one, every section with real content.`,
-      `${office.command} docx${style} --content ${draft}.md --out ${shellQuote(d.path)}`,
+      `${office.command} inspect ${shellQuote(form.path)}   # front-page <fields>, change-log table, the headings to follow`,
+      `${office.command} read ${shellQuote(form.path)}      # what each section asks for (its [hints] and examples)`,
+      `# 1. Write the BODY as Markdown in ${draft}.md, starting at the first heading. The cover, change log, sign-off page and`,
+      "#    table of contents are kept from the model: don't repeat them. Don't type heading numbers (the model numbers headings).",
+      `# 2. Fill the front pages in ${draft}.vars.json: {"Tên dự án": "…", "Ngày": ["…", "", ""], "row:<first change-log column>": [["…", …]]}`,
+      `${office.command} docx${style} --content ${draft}.md --vars ${draft}.vars.json --out ${shellQuote(d.path)}`,
     );
-  } else {
+  } else if (form) out.push(`${office.command} read ${shellQuote(form.path)}   # understand the model first`);
+  if (docx && !form) {
+    out.push(
+      `# Write the whole document as Markdown in ${draft}.md: title, version/history table, every section with real content.`,
+      `${office.command} docx --content ${draft}.md --out ${shellQuote(d.path)}`,
+    );
+  } else if (!docx) {
     out.push(
       `# Design the workbook in ${draft}.json as "sheets" (name, columns, rows), every row filled with real data for this task.`,
       `${office.command} xlsx${style} --data ${draft}.json --out ${shellQuote(d.path)}`,
@@ -220,16 +229,29 @@ When your deliverable names a model (form/sample) file:
 
 ## Word (.docx)
 
-Write the whole document as Markdown: \`#\`/\`##\` headings, paragraphs, \`-\` and \`1.\` lists (indent two spaces to nest),
-pipe tables, \`> quotes\`, code blocks, \`---\` rules, \`<!-- pagebreak -->\`, **bold**, *italic*, \`code\`, [links](https://…).
-Include everything the document needs: title, version/history table, sections.
+Markdown: \`#\`/\`##\`/\`###\` headings, paragraphs, \`-\` and \`1.\` lists (indent two spaces to nest), pipe tables,
+\`> quotes\`, code blocks, \`---\` rules, \`<!-- pagebreak -->\`, **bold**, *italic*, \`code\`, [links](https://…).
+
+With a model:
 
 \`\`\`bash
-${command} docx --style <model.docx> --content draft.md --out <path.docx>
+${command} inspect <model.docx>    # its front-page <fields>, front-page tables (change log) and body headings
+${command} docx --style <model.docx> --content draft.md --vars vars.json --out <path.docx>
 \`\`\`
 
-\`--style\` keeps the model's look (heading, list and table styles, page size, margins, header, footer) and makes
-your Markdown the whole body. Without a model, leave \`--style\` out for a clean default look.
+- \`--style\` keeps the model's front pages (everything before its first heading: cover, change log, sign-off page,
+  table of contents) and its look (heading, list and table styles, page setup, header, footer). Everything from its
+  first heading on is replaced by your draft, so its hints and examples never reach your document.
+- So the draft is the BODY only: start at the first heading (\`# GIỚI THIỆU\`), never repeat the cover, change log,
+  sign-off page or table of contents. Don't type heading numbers: when the model numbers headings, typed numbers are dropped.
+- vars.json fills the front pages. A \`<Field>\` placeholder's key is the text inside the brackets:
+  \`{"Tên dự án": "Hệ thống E-learning", "Mã hiệu tài liệu": "ELN-PTYC-01"}\`. A list fills repeated fields in order:
+  \`{"Chức danh": ["Product Analyst", "Trưởng nhóm BA", "Trưởng dự án"], "Ngày": ["23/11/2026", "", ""]}\` ("" leaves one blank).
+  \`"row:<first header cell>": [[…], […]]\` writes rows into that front-page table, e.g. the change log.
+- The build report lists fields still empty; fill them or set them to "" on purpose. Word refreshes the table of
+  contents when the file is opened.
+
+Without a model, leave out \`--style\` and \`--vars\`, and write the whole document (title, history table, sections).
 Only when a form was made with \`{{placeholders}}\` and must be filled in place: \`--template <form.docx> --vars vars.json\`.
 
 ## Excel (.xlsx)

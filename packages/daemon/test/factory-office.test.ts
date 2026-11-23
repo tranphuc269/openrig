@@ -106,6 +106,39 @@ describe("Word documents", () => {
     await expect(buildDocx({ template: withHeader, mode: "style" })).rejects.toThrow(/--content/);
   });
 
+  it("--style on a company form keeps the front pages, fills their <fields> and change log, replaces the body", async () => {
+    const form = (await buildDocx({ markdown: [
+      "<ĐƠN VỊ>", "", "Dự án: <Tên dự án>", "",
+      "| Ngày thay đổi | Mô tả | Phiên bản |", "|---|---|---|", "| | | |", "| | | |", "",
+      "Người lập: <Chức danh>", "", "Người duyệt: <Chức danh>", "",
+      "# Giới thiệu", "", "[Hướng dẫn: mô tả mục đích]", "", "## Mục đích", "", "Ví dụ: hệ thống quản lý hợp đồng",
+    ].join("\n") })).buffer;
+    // Make heading styles number themselves, like the company form.
+    const zip = await JSZip.loadAsync(form);
+    const styles = (await zip.file("word/styles.xml")!.async("string"))
+      .replace(/(<w:style w:type="paragraph" w:styleId="Heading(\d)">.*?<w:pPr>)/g, '$1<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>');
+    zip.file("word/styles.xml", styles);
+    const numbered = await zip.generateAsync({ type: "nodebuffer" });
+
+    const { buffer, report } = await buildDocx({
+      template: numbered,
+      mode: "style",
+      markdown: "# 1 Giới thiệu\n\n## 1.1 Mục đích\n\nHệ thống E-learning cho trung tâm.",
+      vars: { "ĐƠN VỊ": "Trung tâm PM", "Tên dự án": "E-learning", "Chức danh": ["BA", "Trưởng dự án"], "row:Ngày thay đổi": [["23/11/2026", "Tạo mới", "1.0"]] },
+    });
+    expect(report.frontMatter).toBeGreaterThan(0);
+    const text = await readDocx(buffer);
+    expect(text).toContain("Trung tâm PM");
+    expect(text).toContain("Dự án: E-learning");
+    expect(text).toContain("| 23/11/2026 | Tạo mới | 1.0 |");
+    expect(text).toContain("Người lập: BA");
+    expect(text).toContain("Người duyệt: Trưởng dự án");
+    expect(text).toContain("# Giới thiệu\n\n## Mục đích\n\nHệ thống E-learning");
+    expect(text).not.toContain("Hướng dẫn");
+    expect(text).not.toContain("hợp đồng");
+    expect(text.match(/Giới thiệu/g)).toHaveLength(1);
+  });
+
   it("rejects files that aren't Word documents", async () => {
     await expect(buildDocx({ template: Buffer.from("not a zip") })).rejects.toThrow(/Not a Word file/);
   });
@@ -325,7 +358,8 @@ describe("form routes", () => {
     });
     expect(save.status).toBe(201);
     const guide = readFileSync(join(tmp, "teams", "word-team", "agents", "writer", "guidance", "deliverables.md"), "utf8");
-    expect(guide).toContain(`rig office docx --style '${join(tmp, "forms", `${id}.docx`)}' --content .factory/drafts/writer/report.md`);
+    expect(guide).toContain(`rig office docx --style '${join(tmp, "forms", `${id}.docx`)}' --content .factory/drafts/writer/report.md --vars .factory/drafts/writer/report.vars.json`);
+    expect(guide).toContain("starting at the first heading");
 
     const del = await app.request(`/api/factory/office-templates/${id}`, { method: "DELETE" });
     expect(del.status).toBe(409);

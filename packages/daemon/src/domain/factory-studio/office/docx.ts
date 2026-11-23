@@ -21,8 +21,10 @@ export interface DocxBuildInput {
   template?: Buffer | null;
   /** Main content as Markdown: replaces a paragraph holding only {{content}}, else is appended. */
   markdown?: string | null;
-  /** Values for {{placeholders}}. A value with Markdown structure fills a whole paragraph as blocks. */
-  vars?: Record<string, string>;
+  /** Values for {{placeholders}} and <Field> placeholders (key: the text inside the brackets). A value with
+   *  Markdown structure fills a whole {{placeholder}} paragraph as blocks. "row:<header cell>": rows (string[][])
+   *  written into the empty rows of the table with that header, e.g. a change log. */
+  vars?: Record<string, string | Array<string | number | null> | Array<Array<string | number | null>>>;
   /** "fill": keep the form's text and fill it. "style": keep only the form's look (styles, page setup,
    *  header, footer) and make the body the Markdown content. */
   mode?: "fill" | "style";
@@ -38,6 +40,8 @@ export interface DocxBuildReport {
   unused: string[];
   /** How many places in the document changed. */
   changes: number;
+  /** --style: how many top-level parts of the form's front pages were kept (cover, change log, TOC, …). */
+  frontMatter: number;
 }
 
 export interface DocxInspection {
@@ -47,6 +51,12 @@ export interface DocxInspection {
   /** The template's text, paragraph by paragraph (first 120), with each paragraph's style. */
   outline: Array<{ style: string | null; text: string }>;
   tables: number;
+  /** <Field> placeholders on the form's front pages and in headers/footers. */
+  fields: string[];
+  /** Header rows of the tables on the front pages (before the first heading), e.g. a change log. */
+  frontTables: string[][];
+  /** Headings of the form's body, in order, with their level. */
+  headings: Array<{ level: number; text: string }>;
 }
 
 // ── XML helpers ──────────────────────────────────────────────────────────
@@ -155,12 +165,16 @@ interface StyleMap {
   character: Map<string, string>;
   /** style id → lower-case name. */
   names: Map<string, string>;
+  /** Paragraph style ids that number themselves (a numPr in the style or a style it is based on). */
+  numbered: Set<string>;
 }
 
 function readStyles(xml: string | null): StyleMap {
-  const map: StyleMap = { paragraph: new Map(), table: new Map(), character: new Map(), names: new Map() };
+  const map: StyleMap = { paragraph: new Map(), table: new Map(), character: new Map(), names: new Map(), numbered: new Set() };
   if (!xml) return map;
   const doc = parseXml(xml);
+  const basedOn = new Map<string, string>();
+  const ownNumbering = new Map<string, boolean>();
   for (const s of elements(doc, "style")) {
     const type = attr(s, "type");
     const id = attr(s, "styleId");
@@ -168,14 +182,37 @@ function readStyles(xml: string | null): StyleMap {
     const name = (attr(nameEl, "val") ?? id ?? "").toLowerCase();
     if (!id) continue;
     map.names.set(id, name);
-    if (type === "paragraph") map.paragraph.set(name, id);
+    if (type === "paragraph") {
+      map.paragraph.set(name, id);
+      const base = attr(children(s, "basedOn")[0], "val");
+      if (base) basedOn.set(id, base);
+      const numPr = children(children(s, "pPr")[0] ?? s, "numPr")[0];
+      if (numPr) ownNumbering.set(id, attr(children(numPr, "numId")[0], "val") !== "0");
+    }
     else if (type === "table") map.table.set(name, id);
     else if (type === "character") map.character.set(name, id);
+  }
+  for (const id of map.names.keys()) {
+    let cur: string | undefined = id;
+    for (let depth = 0; cur && depth < 10; depth++) {
+      const own = ownNumbering.get(cur);
+      if (own !== undefined) { if (own) map.numbered.add(id); break; }
+      cur = basedOn.get(cur);
+    }
   }
   return map;
 }
 
 // ── Markdown → WordprocessingML ─────────────────────────────────────────
+
+const TYPED_NUMBER = /^\s*(?:(?:\d+\.)*\d+\.?|[IVXLC]+\.|[A-Z]\.)\s+/;
+
+function stripNumbering(inlines: Inline[]): Inline[] {
+  const [first, ...rest] = inlines;
+  if (!first || !TYPED_NUMBER.test(first.text)) return inlines;
+  const text = first.text.replace(TYPED_NUMBER, "");
+  return text ? [{ ...first, text }, ...rest] : rest;
+}
 
 class Renderer {
   private relCounter = 0;
@@ -226,6 +263,8 @@ class Renderer {
     switch (b.kind) {
       case "heading": {
         const style = this.pStyle(`heading ${b.level}`);
+        // The form numbers its headings itself ("1", "1.1"): drop numbers typed in the draft.
+        if (style && this.styles.numbered.has(style)) return this.paragraph(stripNumbering(b.inlines), { style });
         if (style) return this.paragraph(b.inlines, { style });
         const size = [36, 30, 26, 24, 22, 22][b.level - 1];
         return this.paragraph(b.inlines, { bold: true, size, pPr: `<w:keepNext/><w:spacing w:before="240" w:after="120"/>` });
@@ -331,6 +370,120 @@ function insertBlocks(p: XmlElement, nodes: XmlNode[]): void {
   }
 }
 
+// ── Style mode: the form's front pages, a new body ─────────────────────────
+
+function styleNameOf(p: XmlElement, styles: StyleMap): string {
+  const pPr = children(p, "pPr")[0];
+  const id = attr(pPr ? children(pPr, "pStyle")[0] : undefined, "val");
+  return id ? styles.names.get(id) ?? id.toLowerCase() : "";
+}
+
+function isHeading(el: XmlElement, styles: StyleMap): boolean {
+  return el.localName === "p" && /^heading [1-9]$/.test(styleNameOf(el, styles));
+}
+
+/**
+ * Keeps the form's front pages (cover, change log, sign-off page, table of contents: everything before
+ * its first heading) and drops the rest of its body, which the new content replaces. Notes for the
+ * writer between the table of contents and the first heading are dropped too. Returns how many
+ * top-level elements were kept (0: the form has no heading, so only its page setup is kept).
+ */
+function keepFrontMatter(doc: XmlDocument, styles: StyleMap): number {
+  const body = elements(doc, "body")[0];
+  if (!body) return 0;
+  const all = children(body).filter((el) => el.localName !== "sectPr");
+  const first = all.findIndex((el) => isHeading(el, styles));
+  const front = first < 0 ? [] : all.slice(0, first);
+  for (const el of first < 0 ? all : all.slice(first)) body.removeChild(el);
+  let lastToc = -1;
+  front.forEach((el, i) => { if (el.localName === "p" && styleNameOf(el, styles).startsWith("toc")) lastToc = i; });
+  if (lastToc >= 0) {
+    for (const el of front.slice(lastToc + 1)) {
+      if (el.localName === "p" && paragraphText(el).trim() && !elements(el, "fldChar").length) body.removeChild(el);
+    }
+  }
+  return front.length;
+}
+
+function hasTocField(doc: XmlDocument): boolean {
+  return elements(doc, "instrText").some((t) => /\bTOC\b/.test(t.textContent ?? ""))
+    || elements(doc, "fldSimple").some((f) => /\bTOC\b/.test(f.getAttribute("w:instr") ?? ""));
+}
+
+/** Ask Word to refresh fields (the table of contents) when the document opens. */
+async function requestFieldUpdate(zip: JSZip): Promise<void> {
+  const file = zip.file("word/settings.xml");
+  if (!file) return;
+  const doc = parseXml(await file.async("string"));
+  const root = doc.documentElement!;
+  if (elements(doc, "updateFields").length) return;
+  const el = doc.createElementNS(W, "w:updateFields");
+  el.setAttribute("w:val", "true");
+  const after = ["hdrShapeDefaults", "footnotePr", "endnotePr", "compat", "docVars", "rsids", "mathPr", "attachedSchema", "themeFontLang",
+    "clrSchemeMapping", "doNotIncludeSubdocsInStats", "doNotAutoCompressPictures", "forceUpgrade", "captions", "readModeInkLockDown",
+    "smartTagType", "schemaLibrary", "shapeDefaults", "doNotEmbedSmartTags", "decimalSymbol", "listSeparator"];
+  const before = children(root).find((c) => after.includes(c.localName ?? ""));
+  root.insertBefore(el, (before ?? null) as never);
+  zip.file("word/settings.xml", serialize(doc));
+}
+
+// ── <Field> placeholders and table rows on a form's own pages ─────────────
+
+const ANGLE = /<\s*([^<>\n]{1,80}?)\s*>/g;
+
+function normKey(s: string): string {
+  return s.normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function cellText(tc: XmlElement): string {
+  return children(tc, "p").map((p) => paragraphText(p)).join(" ").replace(/\s+/g, " ").trim();
+}
+
+function setCellText(tc: XmlElement, value: string): void {
+  const doc = tc.ownerDocument!;
+  const paras = children(tc, "p");
+  let p = paras[0];
+  if (!p) { p = doc.createElementNS(W, "w:p"); tc.appendChild(p); }
+  for (const extra of paras.slice(1)) tc.removeChild(extra);
+  if (elements(p, "t").length) { setParagraphText(p, value); return; }
+  const r = doc.createElementNS(W, "w:r");
+  const markProps = children(children(p, "pPr")[0] ?? p, "rPr")[0];
+  if (markProps) r.appendChild(markProps.cloneNode(true) as never);
+  value.split("\n").forEach((line, i) => {
+    if (i > 0) r.appendChild(doc.createElementNS(W, "w:br"));
+    const t = doc.createElementNS(W, "w:t");
+    t.setAttribute("xml:space", "preserve");
+    t.appendChild(doc.createTextNode(line));
+    r.appendChild(t);
+  });
+  p.appendChild(r);
+}
+
+/** "row:<header cell text>" → fill the first empty rows of the table with that header. Returns rows written. */
+function fillRows(doc: XmlDocument, header: string, rows: string[][]): number {
+  const key = normKey(header);
+  for (const tbl of elements(doc, "tbl")) {
+    const trs = children(tbl, "tr");
+    const headIdx = trs.slice(0, 3).findIndex((tr) => children(tr, "tc").some((tc) => normKey(cellText(tc)) === key || normKey(cellText(tc)).startsWith(key)));
+    if (headIdx < 0) continue;
+    const empty = trs.slice(headIdx + 1).filter((tr) => children(tr, "tc").every((tc) => !cellText(tc)));
+    let written = 0;
+    for (const values of rows) {
+      let tr = empty[written];
+      if (!tr) {
+        const model = empty[0] ?? trs[trs.length - 1];
+        if (!model) break;
+        tr = model.cloneNode(true) as unknown as XmlElement;
+        tbl.appendChild(tr as never);
+      }
+      children(tr, "tc").forEach((tc, i) => setCellText(tc, values[i] === undefined || values[i] === null ? "" : String(values[i])));
+      written++;
+    }
+    return written;
+  }
+  return 0;
+}
+
 // ── Default template ─────────────────────────────────────────────────────
 
 const DEFAULT_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -381,7 +534,24 @@ function textParts(zip: JSZip): string[] {
 export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer; report: DocxBuildReport }> {
   const zip = input.template ? await openDocx(input.template) : defaultDocx();
   const styles = readStyles(await zip.file("word/styles.xml")?.async("string") ?? null);
-  const vars = input.vars ?? {};
+  const allVars = input.vars ?? {};
+  const vars: Record<string, string> = {};
+  const rowVars: Array<[string, string[][]]> = [];
+  for (const [k, v] of Object.entries(allVars)) {
+    if (k.startsWith("row:")) {
+      const rows = Array.isArray(v) ? (Array.isArray(v[0]) ? v : [v]) as unknown[][] : [];
+      rowVars.push([k.slice(4), rows.map((r) => r.map((c) => (c === null || c === undefined ? "" : String(c))))]);
+    } else if (typeof v === "string" || typeof v === "number") vars[k] = String(v);
+  }
+  const angleVars = new Map<string, string | string[]>(Object.entries(vars).map(([k, v]) => [normKey(k.replace(/^<|>$/g, "")), v]));
+  // A list fills repeated fields in order: {"Chức danh": ["Trưởng nhóm BA", "Trưởng dự án", "", "Giám đốc"]}.
+  for (const [k, v] of Object.entries(allVars)) {
+    if (!k.startsWith("row:") && Array.isArray(v) && v.every((x) => !Array.isArray(x))) {
+      angleVars.set(normKey(k.replace(/^<|>$/g, "")), (v as unknown[]).map((x) => (x === null || x === undefined ? "" : String(x))));
+    }
+  }
+  const angleSeen = new Map<string, number>();
+  const usedAngle = new Set<string>();
   const seen = new Set<string>();
   const filled = new Set<string>();
   const missing = new Set<string>();
@@ -389,6 +559,8 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
   let changes = 0;
   const markdown = input.markdown?.trim() ? input.markdown : null;
   const styleOnly = input.mode === "style" && !!input.template;
+  let frontMatter = 0;
+  let tocKept = false;
   if (styleOnly && markdown === null) throw new Error("--style needs the document's content: pass --content <draft.md>");
   let docRenderer: Renderer | null = null;
 
@@ -398,9 +570,35 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
     const renderer = new Renderer(styles, isBody);
     if (isBody) docRenderer = renderer;
     if (isBody && styleOnly) {
-      // Keep the form's look only: drop its body text, keep the page setup (the last sectPr).
-      const body = elements(doc, "body")[0];
-      if (body) for (const el of children(body)) if (el.localName !== "sectPr") body.removeChild(el);
+      const kept = keepFrontMatter(doc, styles);
+      frontMatter = kept;
+      if (kept > 0 && hasTocField(doc)) tocKept = true;
+    }
+
+    // <Field> placeholders on the form's own pages (and in headers/footers): "<Tên dự án>", "<Ngày>".
+    if (!isBody || styleOnly || input.mode === "fill") {
+      for (const p of innermostParagraphs(doc)) {
+        const text = paragraphText(p);
+        if (!text.includes("<") || styleNameOf(p, styles).startsWith("toc")) continue;
+        const matches = [...text.matchAll(ANGLE)].map((m) => {
+          const key = normKey(m[1]!);
+          const n = angleSeen.get(key) ?? 0;
+          angleSeen.set(key, n + 1);
+          return { m, key, n };
+        });
+        for (const { m, key, n } of matches.reverse()) {
+          const given = angleVars.get(key);
+          const value = Array.isArray(given) ? given[n] : given;
+          if (value === undefined) { if (styleOnly || !isBody) missing.add(`<${m[1]!.trim()}>`); continue; }
+          if (replaceRange(p, m.index!, m.index! + m[0].length, value)) { usedAngle.add(key); filled.add(`<${m[1]!.trim()}>`); changes++; }
+        }
+      }
+    }
+    if (isBody) {
+      for (const [header, rows] of rowVars) {
+        const n = fillRows(doc, header, rows);
+        if (n > 0) { filled.add(`row:${header} (${n})`); changes++; } else missing.add(`row:${header} (no table with that header)`);
+      }
     }
 
     for (const p of innermostParagraphs(doc)) {
@@ -445,6 +643,8 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
     zip.file(part, serialize(doc));
   }
 
+  if (tocKept) await requestFieldUpdate(zip);
+
   if (docRenderer && docRenderer.newRels.length) {
     const relsPath = "word/_rels/document.xml.rels";
     const rels = parseXml(await zip.file(relsPath)?.async("string") ?? `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="${PKG_REL}"/>`);
@@ -469,7 +669,8 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
       content: contentState,
       filled: [...filled].sort(),
       missing: [...missing].sort(),
-      unused: Object.keys(vars).filter((k) => !seen.has(k)).sort(),
+      unused: Object.keys(allVars).filter((k) => !k.startsWith("row:") && !seen.has(k) && !usedAngle.has(normKey(k.replace(/^<|>$/g, "")))).sort(),
+      frontMatter,
       changes,
     },
   };
@@ -481,6 +682,9 @@ export async function inspectDocx(buf: Buffer): Promise<DocxInspection> {
   const placeholders = new Set<string>();
   const outline: DocxInspection["outline"] = [];
   let tables = 0;
+  const fields = new Set<string>();
+  const frontTables: string[][] = [];
+  const headings: Array<{ level: number; text: string }> = [];
   for (const part of textParts(zip)) {
     const doc = parseXml(await zip.file(part)!.async("string"));
     for (const p of innermostParagraphs(doc)) {
@@ -491,9 +695,31 @@ export async function inspectDocx(buf: Buffer): Promise<DocxInspection> {
         outline.push({ style: styleId ? styles.names.get(styleId) ?? styleId : null, text: text.trim().slice(0, 200) });
       }
     }
-    if (part === "word/document.xml") tables = elements(doc, "tbl").length;
+    const body = elements(doc, "body")[0];
+    const top = body ? children(body) : [];
+    const firstHeading = top.findIndex((el) => isHeading(el, styles));
+    const frontEls = part === "word/document.xml" ? (firstHeading < 0 ? [] : top.slice(0, firstHeading)) : [doc.documentElement!];
+    for (const el of frontEls) {
+      for (const p of el.localName === "p" ? [el] : elements(el, "p")) {
+        if (styleNameOf(p, styles).startsWith("toc")) continue;
+        for (const m of paragraphText(p).matchAll(ANGLE)) fields.add(m[1]!.trim());
+      }
+      if (part === "word/document.xml") {
+        for (const tbl of el.localName === "tbl" ? [el] : elements(el, "tbl")) {
+          const head = children(tbl, "tr")[0];
+          if (head) frontTables.push(children(head, "tc").map(cellText));
+        }
+      }
+    }
+    if (part === "word/document.xml") {
+      tables = elements(doc, "tbl").length;
+      for (const el of top) {
+        if (!isHeading(el, styles)) continue;
+        headings.push({ level: Number(/(\d)$/.exec(styleNameOf(el, styles))![1]), text: paragraphText(el).trim() });
+      }
+    }
   }
-  return { placeholders: [...placeholders].sort(), styles: [...styles.paragraph.keys()].sort(), outline, tables };
+  return { placeholders: [...placeholders].sort(), styles: [...styles.paragraph.keys()].sort(), outline, tables, fields: [...fields], frontTables, headings };
 }
 
 /** The document as Markdown: headings, lists, tables and paragraphs. */

@@ -130,6 +130,9 @@ async function run(command: string | undefined, rest: string[]): Promise<void> {
         `Word form: ${file}`,
         `Placeholders: ${info.placeholders.length ? info.placeholders.map((p) => `{{${p}}}`).join(", ") : "none (content is added at the end)"}`,
         info.placeholders.includes("content") ? "The Markdown draft (--content) replaces the {{content}} paragraph." : "",
+        info.fields.length ? `Front-page fields (fill with --vars, key = text inside < >): ${info.fields.map((f) => `<${f}>`).join(", ")}` : "",
+        ...info.frontTables.map((h) => `Front-page table: ${h.join(" | ")}  (rows: --vars {"row:${h[0] ?? ""}": [["…", "…"]]})`),
+        info.headings.length ? `Body headings (with --style the body is replaced by your draft; if the form numbers its headings, numbers you type are dropped):\n${info.headings.map((h) => `  ${"  ".repeat(h.level - 1)}${h.text}`).join("\n")}` : "",
         `Styles: ${info.styles.join(", ")}`,
         `Tables: ${info.tables}`,
         "",
@@ -168,7 +171,8 @@ async function run(command: string | undefined, rest: string[]): Promise<void> {
     const markdown = flags.content ? readFile(flags.content, "content").toString("utf8") : null;
     const rawVars = flags.vars ? readJson(flags.vars, "vars") : {};
     if (!rawVars || typeof rawVars !== "object" || Array.isArray(rawVars)) fail("--vars must be a JSON object");
-    const vars = Object.fromEntries(Object.entries(rawVars as Record<string, unknown>).map(([k, v]) => [k, v === null || v === undefined ? "" : String(v)]));
+    const vars = Object.fromEntries(Object.entries(rawVars as Record<string, unknown>).map(([k, v]) => [k,
+      Array.isArray(v) ? v as Array<string | number | null> : v === null || v === undefined ? "" : String(v)]));
     const { buffer, report } = await buildDocx({ template, markdown, vars, mode: flags.style ? "style" : "fill" });
     if (report.changes === 0) {
       fail("nothing was written: the output would be the form unchanged. Pass --content <draft.md> with the document's text"
@@ -177,9 +181,9 @@ async function run(command: string | undefined, rest: string[]): Promise<void> {
     const abs = writeOut(out, buffer);
     process.stdout.write([
       `Wrote ${abs}`,
-      report.content === "body" ? "New body written in the form's look." : report.content === "placeholder" ? "Content placed at {{content}}." : report.content === "appended" ? "Content added at the end of the form (the form's own text is still above it; use --style for a new document)." : "",
-      list("Filled", report.filled.map((k) => `{{${k}}}`)),
-      list("Still empty (no value given)", report.missing.map((k) => `{{${k}}}`)),
+      report.content === "body" ? (report.frontMatter ? "Kept the form's front pages (cover, change log, sign-off, table of contents); the body is your draft. Word refreshes the table of contents when the file opens." : "New body written in the form's look.") : report.content === "placeholder" ? "Content placed at {{content}}." : report.content === "appended" ? "Content added at the end of the form (the form's own text is still above it; use --style for a new document)." : "",
+      list("Filled", report.filled.map((k) => (k.startsWith("<") || k.startsWith("row:") ? k : `{{${k}}}`))),
+      list("Still empty (no value given)", report.missing.map((k) => (k.startsWith("<") || k.startsWith("row:") ? k : `{{${k}}}`))),
       list("Not in the form (ignored)", report.unused),
     ].filter(Boolean).join("\n") + "\n");
     return;
