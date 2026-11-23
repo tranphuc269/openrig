@@ -8,6 +8,7 @@ import { shellQuote } from "./shell-quote.js";
 import { fileURLToPath } from "node:url";
 import { existsSync } from "node:fs";
 import { HOOK_BRIDGE_TIMEOUT_SECONDS } from "../domain/hook-bridge.js";
+import { agentApiClaudeSettings } from "../domain/agent-api-settings.js";
 
 import { KERNEL_CLAUDE_ALLOW, TEAM_CLAUDE_ALLOW, TEAM_CLAUDE_ASK } from "../../assets/claude-permission-policies.cjs";
 export { KERNEL_CLAUDE_ALLOW, TEAM_CLAUDE_ALLOW, TEAM_CLAUDE_ASK };
@@ -104,6 +105,13 @@ export function operationalLaunchArgs(runtime: string, choice: LaunchChoice): st
     if (block !== undefined) {
       const autoMode = validateClaudeAutoMode(block);
       args = withSettings(args, settings => ({ ...settings, autoMode }));
+    }
+    // Agent API settings (web UI Settings, else the daemon's ANTHROPIC_* environment): every Claude agent bills
+    // that API key, reached through apiKeyHelper so the key itself never appears on a command line.
+    const api = agentApiClaudeSettings();
+    if (api) {
+      args = withSettings(args, settings => ({ ...settings, apiKeyHelper: api.apiKeyHelper,
+        env: { ...((settings.env ?? {}) as Record<string, string>), ...api.env } }));
     }
     return args;
   }

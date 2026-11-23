@@ -107,7 +107,9 @@ describe("factory routes", () => {
     expect(validateRigSpecFromYaml(rigYaml)).toEqual({ valid: true, errors: [] });
     const rig = parse(rigYaml);
     expect(rig.pods[0].members.map((m: { id: string }) => m.id)).toEqual(["architect", "backend", "qa"]);
-    expect(rig.pods[0].members[0].model).toBe("opus");
+    // Runtime and model come from Settings now: every member runs Claude Code, with no per-member model.
+    expect(rig.pods[0].members[0].model).toBeUndefined();
+    expect(rig.pods[0].members.map((m: { runtime: string }) => m.runtime)).toEqual(["claude-code", "claude-code", "claude-code"]);
     expect(rig.pods[0].edges).toEqual([
       { kind: "delegates_to", from: "architect", to: "backend" },
       { kind: "delegates_to", from: "backend", to: "qa" },

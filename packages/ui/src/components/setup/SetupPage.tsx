@@ -1,9 +1,9 @@
 // Get ready (/setup) — everything a team needs to run on this machine, with quick fixes.
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { AlertCircle, ArrowRight, CheckCircle2, CircleDashed, Copy, Power, RefreshCw, Rocket, TriangleAlert, UserPlus, XCircle } from "lucide-react";
+import { AlertCircle, ArrowRight, CheckCircle2, CircleDashed, Copy, KeyRound, Power, RefreshCw, Rocket, TriangleAlert, UserPlus, XCircle } from "lucide-react";
 import { useEnableUsageWindows } from "../../hooks/useUsageCost.js";
-import { useCheckSignIn, useReadiness, useRegisterPerson, type ReadinessCheck } from "../../hooks/useReadiness.js";
+import { useReadiness, useRegisterPerson, type ReadinessCheck } from "../../hooks/useReadiness.js";
 import { toSlug } from "../../hooks/useFactory.js";
 import { Alert, Button, Field, Page, PageHeader, Pill, TextInput } from "../factory/fields.js";
 
@@ -69,7 +69,6 @@ function RegisterPerson() {
 
 function CheckRow({ check }: { check: ReadinessCheck }) {
   const enable = useEnableUsageWindows();
-  const signIn = useCheckSignIn();
   const [open, setOpen] = useState(false);
   const needsFix = check.state !== "ok";
   return (
@@ -93,13 +92,10 @@ function CheckRow({ check }: { check: ReadinessCheck }) {
                 {enable.error ? <span className="text-[13px] text-[color:var(--fx-danger)]">{(enable.error as Error).message}</span> : null}
               </div>
             ) : null}
-            {check.fixAction === "check-sign-in" ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" onClick={() => signIn.mutate()} disabled={signIn.isPending}>
-                  <RefreshCw className={signIn.isPending ? "animate-spin" : undefined} /> {signIn.isPending ? "Checking… (up to a minute)" : "Check now"}
-                </Button>
-                {signIn.error ? <span className="text-[13px] text-[color:var(--fx-danger)]">{(signIn.error as Error).message}</span> : null}
-              </div>
+            {check.fixAction === "open-settings" ? (
+              <Link to="/settings/agent-api" className="fx-btn fx-btn-primary fx-btn-sm self-start" data-testid="setup-open-settings">
+                <KeyRound /> Open Settings
+              </Link>
             ) : null}
             {check.fixAction === "register-person" ? <RegisterPerson /> : null}
             {check.fixCommand && check.fixAction !== "register-person" ? (

@@ -219,7 +219,7 @@ const RAIL_ICONS: RailIconSpec[] = [
   {
     id: "settings",
     label: "Settings",
-    to: "/settings",
+    to: "/settings/agent-api",
     icon: Cog,
     activeWhen: (p) => p.startsWith("/settings"),
     testId: "rail-settings",

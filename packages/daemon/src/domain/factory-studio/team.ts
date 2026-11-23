@@ -119,11 +119,10 @@ export function parseFactoryTeamInput(raw: unknown): { ok: true; team: FactoryTe
     if (memberIds.has(id)) errors.push(`${p}.id: duplicate member id "${id}"`);
     memberIds.add(id);
 
-    const runtime = str(m.runtime) || "claude-code";
-    if (!(FACTORY_RUNTIMES as readonly string[]).includes(runtime)) {
-      errors.push(`${p}.runtime: must be one of ${FACTORY_RUNTIMES.join(", ")}`);
-    }
-    const model = shortText(m.model, `${p}.model`, errors, { max: 80 });
+    // Every member runs on Claude Code with the API key, base URL and model from Settings
+    // (GET /api/factory/settings/agent-api). A runtime or model sent by an older client is ignored.
+    const runtime: FactoryRuntime = "claude-code";
+    const model = undefined as string | undefined;
     const effort = shortText(m.effort, `${p}.effort`, errors, { max: 40 });
 
     const skills = Array.isArray(m.skills) ? m.skills.map(str).filter(Boolean) : [];

@@ -9,7 +9,7 @@ export interface ReadinessCheck {
   state: CheckState;
   detail: string;
   fixCommand?: string;
-  fixAction?: "register-person" | "enable-usage" | "check-sign-in";
+  fixAction?: "register-person" | "enable-usage" | "open-settings";
   required: boolean;
 }
 
@@ -41,26 +41,6 @@ export function useRegisterPerson() {
     mutationFn: (v: { entityId: string; displayName: string }) =>
       json<{ ok: true; entityId: string; address: string }>("/api/factory/readiness/person", { method: "POST", body: JSON.stringify(v) }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["readiness"] }),
-  });
-}
-
-/** Ask the daemon to read Claude and Codex sign-in and limits now (POST /api/provider/usage/refresh). */
-export function useCheckSignIn() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async () => {
-      const results = await Promise.allSettled(
-        (["claude", "codex"] as const).map((provider) =>
-          json("/api/provider/usage/refresh", { method: "POST", body: JSON.stringify({ provider }) })),
-      );
-      const failed = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
-      if (failed.length === results.length) throw failed[0]!.reason;
-      return results;
-    },
-    onSettled: () => {
-      void qc.invalidateQueries({ queryKey: ["readiness"] });
-      void qc.invalidateQueries({ queryKey: ["usage"] });
-    },
   });
 }
 

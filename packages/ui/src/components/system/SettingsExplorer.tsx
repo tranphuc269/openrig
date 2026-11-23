@@ -10,7 +10,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { cn } from "../../lib/utils.js";
 
 interface SettingsExplorerItem {
-  id: "settings" | "policies" | "log" | "status";
+  id: "agent-api" | "settings" | "policies" | "log" | "status";
   label: string;
   href: string;
   /**
@@ -22,6 +22,12 @@ interface SettingsExplorerItem {
 }
 
 const SETTINGS_ITEMS: SettingsExplorerItem[] = [
+  {
+    id: "agent-api",
+    label: "Agent API",
+    href: "/settings/agent-api",
+    isActive: (path) => path.startsWith("/settings/agent-api"),
+  },
   {
     id: "settings",
     label: "Settings",

@@ -162,6 +162,8 @@
 .fx-input:disabled { background: var(--fx-surface-2); color: var(--fx-muted); }
 textarea.fx-input { resize: vertical; min-height: 96px; }
 select.fx-input { padding-right: 32px; }
+/* Room for a leading icon (key, folder, server). */
+.fx-input.pl-9 { padding-left: 36px; }
 
 /* Segmented control */
 .fx-segment { display: inline-flex; padding: 3px; gap: 2px; background: var(--fx-surface-2); border-radius: 10px; border: 1px solid var(--fx-border); }

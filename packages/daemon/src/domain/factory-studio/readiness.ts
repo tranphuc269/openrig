@@ -11,6 +11,7 @@ import * as path from "node:path";
 import { addHumanFragment, showHuman } from "../gateway/human-registry.js";
 import { channelStateDigest, runChannelOperation } from "../gateway/channel-operations.js";
 import { setDefaultPerson } from "../gateway/participants.js";
+import { readAgentApiSettings } from "../agent-api-settings.js";
 
 export type CheckState = "ok" | "warn" | "fail" | "unknown";
 
@@ -22,7 +23,7 @@ export interface ReadinessCheck {
   /** Shell command the person can run to fix it, when there is one. */
   fixCommand?: string;
   /** In-app fix the UI offers (it calls the matching endpoint). */
-  fixAction?: "register-person" | "enable-usage" | "check-sign-in";
+  fixAction?: "register-person" | "enable-usage" | "open-settings";
   required: boolean;
 }
 
@@ -68,38 +69,16 @@ async function toolCheck(lookup: ShellLookup, cmd: string, title: string, opts: 
     : { id: cmd, title, state: opts.required ? "fail" : "warn", detail: opts.missing, fixCommand: opts.fix, required: opts.required };
 }
 
-function signInCheck(provider: "claude" | "codex", usage: Array<Record<string, unknown>> | null, installed: boolean): ReadinessCheck {
-  const title = provider === "claude" ? "Signed in to Claude" : "Signed in to Codex";
-  const login = provider === "claude" ? "claude   # then run /login inside it" : "codex login";
-  if (!installed) return { id: `${provider}-sign-in`, title, state: "unknown", detail: `${provider === "claude" ? "Claude Code" : "Codex"} isn't installed.`, required: false };
-  if (!usage) {
-    return { id: `${provider}-sign-in`, title, state: "unknown", detail: "Turn on plan-limit tracking to check sign-in from here.", fixAction: "enable-usage", required: false };
-  }
-  const row = usage.find((r) => r["provider"] === provider);
-  const signIn = (row?.["signIn"] ?? {}) as Record<string, unknown>;
-  const identity = row?.["identity"] as Record<string, unknown> | null | undefined;
-  if (signIn["state"] === "needs_sign_in") {
-    return { id: `${provider}-sign-in`, title, state: "fail", detail: "Not signed in.", fixCommand: login, fixAction: "check-sign-in", required: false };
-  }
-  if (identity) {
-    const who = identity["email"] ?? identity["orgName"] ?? identity["accountId"] ?? "signed in";
-    return { id: `${provider}-sign-in`, title, state: "ok", detail: String(who), required: false };
-  }
-  return { id: `${provider}-sign-in`, title, state: "unknown", detail: "Not checked yet.", fixAction: "check-sign-in", fixCommand: login, required: false };
-}
-
-export async function readReadiness(opts: { dispatch: Dispatch; lookup?: ShellLookup }): Promise<ReadinessReport> {
+export async function readReadiness(opts: { dispatch: Dispatch; lookup?: ShellLookup; agentApiHome?: string }): Promise<ReadinessReport> {
   const lookup = opts.lookup ?? loginShellLookup;
-  const [rig, tmux, claude, codex, status, config, people] = await Promise.all([
+  const [rig, tmux, claude, config, people] = await Promise.all([
     lookup("rig"),
     lookup("tmux"),
     lookup("claude"),
-    lookup("codex"),
-    opts.dispatch("GET", "/api/provider/status").catch(() => ({ status: 0, data: null })),
     opts.dispatch("GET", "/api/config").catch(() => ({ status: 0, data: null })),
     opts.dispatch("GET", "/api/gateway/participants").catch(() => ({ status: 0, data: null })),
   ]);
-  const once: ShellLookup = async (c) => ({ rig, tmux, claude, codex }[c as "rig"] ?? { path: null, version: null });
+  const once: ShellLookup = async (c) => ({ rig, tmux, claude }[c as "rig"] ?? { path: null, version: null });
 
   const checks: ReadinessCheck[] = [];
   checks.push(nodeCheck());
@@ -109,19 +88,26 @@ export async function readReadiness(opts: { dispatch: Dispatch; lookup?: ShellLo
     fix: "npm install -g ./packages/cli   # from your openrig checkout",
     missing: "Agents can't find `rig` in their login shell, so they can't hand work to each other or ask you questions. An alias in ~/.zshrc doesn't count.",
   }));
-  const agentTools = await Promise.all([
-    toolCheck(once, "claude", "Claude Code", { required: false, fix: "npm install -g @anthropic-ai/claude-code", missing: "Not installed. Needed for members that run on Claude Code." }),
-    toolCheck(once, "codex", "Codex", { required: false, fix: "npm install -g @openai/codex", missing: "Not installed. Needed for members that run on Codex." }),
-  ]);
-  checks.push(...agentTools);
-  if (!claude.path && !codex.path) {
-    checks.push({ id: "agent-tool", title: "An AI agent tool", state: "fail", detail: "Install Claude Code or Codex: teams need at least one of them.", fixCommand: "npm install -g @anthropic-ai/claude-code", required: true });
-  }
+  checks.push(await toolCheck(once, "claude", "Claude Code", { required: true, fix: "npm install -g @anthropic-ai/claude-code", missing: "Not installed. Every agent runs on Claude Code." }));
 
-  const model = (status.status === 200 ? status.data : null) as Record<string, unknown> | null;
-  const usage = Array.isArray(model?.["usage"]) ? (model!["usage"] as Array<Record<string, unknown>>) : null;
-  checks.push(signInCheck("claude", usage, !!claude.path));
-  checks.push(signInCheck("codex", usage, !!codex.path));
+  // Agents run on the Anthropic API key, base URL and model from Settings, not on a Claude/Codex sign-in.
+  const api = readAgentApiSettings(opts.agentApiHome);
+  checks.push(api.hasKey
+    ? {
+        id: "agent-api",
+        title: "Anthropic API key for agents",
+        state: "ok",
+        detail: `Key ••••${api.keyHint}${api.source === "environment" ? " from the daemon's environment" : ""} · ${api.model ?? "Claude Code's default model"} · ${api.baseUrl ?? "api.anthropic.com"}`,
+        required: true,
+      }
+    : {
+        id: "agent-api",
+        title: "Anthropic API key for agents",
+        state: "fail",
+        detail: "Agents can't start without an API key. Add it in Settings, or start the daemon with ANTHROPIC_API_KEY set.",
+        fixAction: "open-settings",
+        required: true,
+      });
 
   const settings = ((config.data as { settings?: Record<string, { value?: unknown }> } | null)?.settings) ?? {};
   const defaultPerson = ((people.data as { default?: { id?: string | null } } | null)?.default?.id) ?? null;
@@ -140,7 +126,7 @@ export async function readReadiness(opts: { dispatch: Dispatch; lookup?: ShellLo
   const usageOn = settings["provider.usage_windows"]?.value === true;
   checks.push(usageOn
     ? { id: "usage", title: "Plan-limit tracking", state: "ok", detail: "On: Usage & cost shows how much of your limits is left.", required: false }
-    : { id: "usage", title: "Plan-limit tracking", state: "warn", detail: "Off: you won't see how much of your Claude/Codex limits is left.", fixAction: "enable-usage", fixCommand: "rig config set provider.usage_windows true", required: false });
+    : { id: "usage", title: "Plan-limit tracking", state: "warn", detail: "Off: Usage & cost won't show plan limits. With an API key, cost is still tracked per task.", fixAction: "enable-usage", fixCommand: "rig config set provider.usage_windows true", required: false });
 
   return {
     checkedAt: new Date().toISOString(),

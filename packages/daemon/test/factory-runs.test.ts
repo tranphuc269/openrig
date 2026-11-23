@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { clearAgentApiKey, saveAgentApiSettings } from "../src/domain/agent-api-settings.js";
 import { Hono } from "hono";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -65,7 +66,9 @@ describe("factory runs (Agent Workspace)", () => {
       runsRoot: join(tmp, "runs"),
       dispatch,
       runTiming: { pollMs: 1, readyTimeoutMs: 50, sleep: () => Promise.resolve() },
+      agentApiHome: join(tmp, "openrig-home"),
     });
+    saveAgentApiSettings({ apiKey: "sk-ant-test-key-1234" }, join(tmp, "openrig-home"), {});
     app = new Hono();
     app.route("/api/factory", runsRoutes);
     const res = await req("POST", "/api/factory/teams", TEAM);
@@ -90,6 +93,14 @@ describe("factory runs (Agent Workspace)", () => {
     }
     return run.id;
   }
+
+  it("refuses to start a task until an API key is set in Settings", async () => {
+    clearAgentApiKey(join(tmp, "openrig-home"), {});
+    const res = await req("POST", "/api/factory/runs", { team: "doc-team", task: "Write the docs", projectDir: project });
+    expect(res.status).toBe(412);
+    expect(await res.json()).toMatchObject({ error: "agent_api_missing" });
+    expect(calls.filter((c) => c.path === "/api/up")).toHaveLength(0);
+  });
 
   it("launches the team in the project folder and sends the task to the first member only", async () => {
     const id = await startRun();
@@ -179,6 +190,7 @@ describe("factory runs (Agent Workspace)", () => {
       a.route("/api/factory", factoryRoutes({
         teamsRoot: () => join(tmp, "teams"), sharedAgentDir: SHARED_AGENT_DIR, runsRoot: join(fresh, "runs"), dispatch,
         runTiming: { pollMs: 1, readyTimeoutMs: 50, sleep: () => Promise.resolve() },
+        agentApiHome: join(tmp, "openrig-home"),
       }));
       const post = (b: unknown) => a.request("/api/factory/runs", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
       expect((await post({ team: "doc-team", task: "x", projectDir: join(tmp, "nope") })).status).toBe(400);

@@ -20,6 +20,7 @@ import { FactoryStoreError, FactoryTeamStore } from "../domain/factory-studio/te
 import { FactoryRunStore } from "../domain/factory-studio/run-store.js";
 import { FactoryRunService, RunError, type Dispatch } from "../domain/factory-studio/run-service.js";
 import { checkFolder, createFolder, listFolders, readReadiness, registerDefaultPerson, type ShellLookup } from "../domain/factory-studio/readiness.js";
+import { AgentApiSettingsError, clearAgentApiKey, readAgentApiSettings, saveAgentApiSettings, testAgentApi } from "../domain/agent-api-settings.js";
 import type { SkillLibraryDiscoveryService } from "../domain/skill-library-discovery.js";
 import type { SpecLibraryService } from "../domain/spec-library-service.js";
 
@@ -34,6 +35,10 @@ export interface FactoryRoutesOpts {
   dispatch?: Dispatch;
   /** Test hooks for readiness: tool lookup and the OpenRig home the person is registered in. */
   readiness?: { lookup?: ShellLookup; home?: string };
+  /** OpenRig home holding agent-api/ (tests). Default: $OPENRIG_HOME. */
+  agentApiHome?: string;
+  /** Test hook for the connection test. */
+  agentApiFetch?: typeof fetch;
   /** Test hooks for the launch wait. */
   runTiming?: { pollMs?: number; readyTimeoutMs?: number; sleep?: (ms: number) => Promise<void> };
 }
@@ -177,6 +182,17 @@ export function factoryRoutes(opts: FactoryRoutesOpts = {}): Hono {
       })
     : null;
 
+  /** Teams saved before Settings existed may name Codex or a per-member model; save them again as Claude Code
+   *  members so the launch uses the API key, base URL and model from Settings. */
+  const upgradeTeamRuntime = (c: Context, name: string) => {
+    if (!name) return;
+    const store = storeFor(c);
+    let team;
+    try { team = store.read(name); } catch { return; }
+    if (!team || team.members.every((m) => m.runtime === "claude-code" && !m.model)) return;
+    store.save({ ...team, members: team.members.map(({ model: _model, ...m }) => ({ ...m, runtime: "claude-code" as const })) });
+  };
+
   const runError = (c: Context, err: unknown): Response => {
     if (err instanceof RunError) return c.json({ error: err.code, message: err.message }, err.status);
     return c.json({ error: "run_failed", message: err instanceof Error ? err.message : String(err) }, 500);
@@ -201,6 +217,10 @@ export function factoryRoutes(opts: FactoryRoutesOpts = {}): Hono {
 
   router.post("/runs", (c) => withRuns(c, async (svc) => {
     const b = await body(c);
+    if (!readAgentApiSettings(opts.agentApiHome).hasKey) {
+      return c.json({ error: "agent_api_missing", message: "Agents need an Anthropic API key. Add it in Settings, then start the task again." }, 412);
+    }
+    upgradeTeamRuntime(c, text(b.team));
     const run = svc.start({ team: text(b.team), task: text(b.task), projectDir: b.projectDir });
     return c.json(run, 202);
   }));
@@ -244,7 +264,7 @@ export function factoryRoutes(opts: FactoryRoutesOpts = {}): Hono {
   //   POST /fs/folders {path}               create a new project folder inside home
   router.get("/readiness", async (c) => {
     if (!dispatch) return c.json({ error: "readiness_unavailable", message: "Readiness is not wired on this daemon" }, 503);
-    return c.json(await readReadiness({ dispatch, lookup: opts.readiness?.lookup }));
+    return c.json(await readReadiness({ dispatch, lookup: opts.readiness?.lookup, agentApiHome: opts.agentApiHome }));
   });
   router.post("/readiness/person", async (c) => {
     const b = await body(c);
@@ -272,6 +292,25 @@ export function factoryRoutes(opts: FactoryRoutesOpts = {}): Hono {
       return c.json({ error: "folder_not_created", message: err instanceof Error ? err.message : String(err) }, 500);
     }
   });
+
+  // ── Agent API settings ────────────────────────────────────────────────
+  //   GET    /settings/agent-api        key hint (never the key), base URL, model, where they come from
+  //   PUT    /settings/agent-api        {apiKey?, baseUrl?, model?}   blank base URL/model removes it
+  //   DELETE /settings/agent-api/key    forget the saved key
+  //   POST   /settings/agent-api/test   one tiny request with the active values
+  router.get("/settings/agent-api", (c) => c.json(readAgentApiSettings(opts.agentApiHome)));
+  router.put("/settings/agent-api", async (c) => {
+    const b = await body(c);
+    const opt = (v: unknown) => (v === undefined ? undefined : v === null ? null : typeof v === "string" ? v : String(v));
+    try {
+      return c.json(saveAgentApiSettings({ apiKey: typeof b.apiKey === "string" ? b.apiKey : undefined, baseUrl: opt(b.baseUrl), model: opt(b.model) }, opts.agentApiHome));
+    } catch (err) {
+      if (err instanceof AgentApiSettingsError) return c.json({ error: "invalid_setting", field: err.field, message: err.message }, 400);
+      return c.json({ error: "settings_not_saved", message: err instanceof Error ? err.message : String(err) }, 500);
+    }
+  });
+  router.delete("/settings/agent-api/key", (c) => c.json(clearAgentApiKey(opts.agentApiHome)));
+  router.post("/settings/agent-api/test", async (c) => c.json(await testAgentApi({ home: opts.agentApiHome, fetchImpl: opts.agentApiFetch })));
 
   router.post("/runs/:id/stop", (c) => withRuns(c, async (svc) => c.json(await svc.stop(c.req.param("id")))));
 

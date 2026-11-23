@@ -76,42 +76,13 @@ function Basics({ member, otherIds, set }: { member: FactoryMember; otherIds: st
       >
         <TextInput data-testid="factory-member-id" value={member.id} className="fx-mono" onChange={(e) => set("id", toSlug(e.target.value))} />
       </Field>
-      <Field label="AI agent">
-        <div className="fx-segment w-full">
-          {(["claude-code", "codex"] as const).map((rt) => (
-            <button
-              key={rt}
-              type="button"
-              aria-pressed={member.runtime === rt}
-              onClick={() => set("runtime", rt)}
-              className="flex-1"
-              data-testid={`factory-member-runtime-${rt}`}
-            >
-              {rt === "codex" ? "Codex" : "Claude Code"}
-            </button>
-          ))}
-        </div>
-      </Field>
       <Field label="Role" hint="A short label, like architect, backend or qa.">
         <TextInput value={member.role} className="fx-mono" onChange={(e) => set("role", toSlug(e.target.value))} placeholder={member.id} />
-      </Field>
-      <Field label="Model" hint="Optional. Leave empty for the default.">
-        <TextInput
-          list={`factory-models-${member.runtime}`}
-          value={member.model ?? ""}
-          onChange={(e) => set("model", e.target.value || undefined)}
-          placeholder={member.runtime === "codex" ? "e.g. gpt-5-codex" : "e.g. opus, sonnet"}
-        />
-        <datalist id={`factory-models-${member.runtime}`}>
-          {member.runtime === "codex"
-            ? ["gpt-5-codex", "gpt-5"].map((m) => <option key={m} value={m} />)
-            : ["opus", "sonnet", "haiku"].map((m) => <option key={m} value={m} />)}
-        </datalist>
       </Field>
       <Field label="Thinking effort">
         <Select value={member.effort ?? ""} onChange={(e) => set("effort", e.target.value || undefined)}>
           <option value="">Default</option>
-          {EFFORT_LEVELS[member.runtime].map((l) => (
+          {EFFORT_LEVELS["claude-code"].map((l) => (
             <option key={l} value={l}>{l[0]!.toUpperCase() + l.slice(1)}</option>
           ))}
         </Select>

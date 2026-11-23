@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { saveAgentApiSettings } from "../src/domain/agent-api-settings.js";
 import { Hono } from "hono";
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -39,6 +40,7 @@ describe("factory readiness + folder picker", () => {
     a.route("/api/factory", factoryRoutes({
       teamsRoot: () => join(tmp, "teams"), runsRoot: join(tmp, "runs"), dispatch: dispatch as never,
       readiness: { lookup, home },
+      agentApiHome: home,
     }));
     return a;
   }
@@ -46,35 +48,38 @@ describe("factory readiness + folder picker", () => {
     app().request(url, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
   const byId = (checks: Array<{ id: string }>, id: string) => checks.find((c) => c.id === id) as Record<string, unknown>;
 
-  it("reports what blocks a team: rig missing from the login shell is a required failure", async () => {
+  it("reports what blocks a team: rig missing from the login shell and no API key are required failures", async () => {
     const r = await (await req("GET", "/api/factory/readiness")).json() as { ready: boolean; checks: Array<{ id: string }> };
     expect(r.ready).toBe(false);
     expect(byId(r.checks, "rig")).toMatchObject({ state: "fail", required: true });
     expect(byId(r.checks, "tmux")).toMatchObject({ state: "ok" });
-    expect(byId(r.checks, "codex")).toMatchObject({ state: "warn", required: false });
+    expect(byId(r.checks, "agent-api")).toMatchObject({ state: "fail", required: true, fixAction: "open-settings" });
     expect(byId(r.checks, "person")).toMatchObject({ state: "warn", fixAction: "register-person" });
     expect(byId(r.checks, "usage")).toMatchObject({ state: "warn", fixAction: "enable-usage" });
-    expect(byId(r.checks, "claude-sign-in")).toMatchObject({ state: "unknown", fixAction: "enable-usage" });
+    // Sign-in and Codex aren't checked any more: agents run on the API key from Settings.
+    expect(byId(r.checks, "codex")).toBeUndefined();
+    expect(byId(r.checks, "claude-sign-in")).toBeUndefined();
   });
 
-  it("is ready once the required tools are there, and reads sign-in from the usage model", async () => {
+  it("is ready once the required tools and an API key are there, and shows the key's last 4 characters only", async () => {
     installed.rig = "/usr/local/bin/rig";
-    usageWindows = true;
     defaultPerson = "linh";
-    usageRows = [{ provider: "claude", identity: { email: "linh@example.com" } }, { provider: "codex", identity: null, signIn: { state: "needs_sign_in" } }];
-    installed.codex = "/usr/local/bin/codex";
+    saveAgentApiSettings({ apiKey: "sk-ant-secret-abcd", model: "claude-sonnet-5-5" }, home, {});
     const r = await (await req("GET", "/api/factory/readiness")).json() as { ready: boolean; checks: Array<{ id: string }> };
     expect(r.ready).toBe(true);
-    expect(byId(r.checks, "claude-sign-in")).toMatchObject({ state: "ok", detail: "linh@example.com" });
-    expect(byId(r.checks, "codex-sign-in")).toMatchObject({ state: "fail", fixCommand: "codex login" });
+    const api = byId(r.checks, "agent-api");
+    expect(api).toMatchObject({ state: "ok" });
+    expect(String(api.detail)).toContain("••••abcd");
+    expect(String(api.detail)).toContain("claude-sonnet-5-5");
+    expect(JSON.stringify(r)).not.toContain("sk-ant-secret");
     expect(byId(r.checks, "person")).toMatchObject({ state: "ok" });
   });
 
-  it("requires at least one agent tool", async () => {
+  it("requires Claude Code", async () => {
     installed = { tmux: "/t", rig: "/r" };
     const r = await (await req("GET", "/api/factory/readiness")).json() as { ready: boolean; checks: Array<{ id: string }> };
     expect(r.ready).toBe(false);
-    expect(byId(r.checks, "agent-tool")).toMatchObject({ state: "fail", required: true });
+    expect(byId(r.checks, "claude")).toMatchObject({ state: "fail", required: true });
   });
 
   it("registers the person agents ask, as the default, and refuses bad or duplicate ids", async () => {

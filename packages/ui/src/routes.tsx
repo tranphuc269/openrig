@@ -54,6 +54,7 @@ import { WorkspacePage as AgentWorkspacePage, NewTaskPage } from "./components/w
 import { RunPage } from "./components/workspace/RunPage.js";
 import { UsagePage } from "./components/usage/UsagePage.js";
 import { SetupPage } from "./components/setup/SetupPage.js";
+import { SettingsPage as AgentApiSettingsPage } from "./components/settings/SettingsPage.js";
 import { SettingsCenter } from "./components/system/SettingsCenter.js";
 import { PoliciesPage } from "./components/system/PoliciesPage.js";
 import { LogPage } from "./components/system/LogPage.js";
@@ -295,6 +296,12 @@ const settingsPoliciesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/policies",
   component: PoliciesPage,
+});
+// Agent API — the Anthropic API key, base URL and model every agent runs on.
+const settingsAgentApiRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings/agent-api",
+  component: AgentApiSettingsPage,
 });
 const settingsLogRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -628,6 +635,7 @@ export const routeTree = rootRoute.addChildren([
   filesRoute,
   specsKindRoute,
   settingsRoute,
+  settingsAgentApiRoute,
   studioRoute,
   studioNewRoute,
   studioTeamRoute,

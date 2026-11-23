@@ -32,7 +32,7 @@ export const MEMBER_PRESETS: MemberPreset[] = [
     id: "backend",
     title: "Backend Engineer",
     role: "backend",
-    runtime: "codex",
+    runtime: "claude-code",
     instructions: "Specify the API and database from the system design. Keep it consistent with the data model.",
     templates: ["api-spec", "db-design"],
   },
@@ -132,7 +132,7 @@ export const TEAM_TEMPLATES: TeamTemplate[] = [
     members: [
       { id: "product-analyst", title: "Product Analyst", role: "product-analyst", runtime: "claude-code", instructions: MEMBER_PRESETS[0]!.instructions, docs: ["prd"] },
       { id: "architect", title: "Solution Architect", role: "architect", runtime: "claude-code", instructions: MEMBER_PRESETS[1]!.instructions, docs: ["system-design"] },
-      { id: "backend", title: "Backend Engineer", role: "backend", runtime: "codex", instructions: MEMBER_PRESETS[2]!.instructions, docs: ["api-spec", "db-design"] },
+      { id: "backend", title: "Backend Engineer", role: "backend", runtime: "claude-code", instructions: MEMBER_PRESETS[2]!.instructions, docs: ["api-spec", "db-design"] },
       { id: "qa", title: "QA Engineer", role: "qa", runtime: "claude-code", instructions: MEMBER_PRESETS[3]!.instructions, docs: ["test-plan"] },
     ],
   },
@@ -145,7 +145,7 @@ export const TEAM_TEMPLATES: TeamTemplate[] = [
     workflow: "sequential",
     members: [
       { id: "architect", title: "Tech Lead", role: "architect", runtime: "claude-code", instructions: "Read the codebase and plan the change: which files, which approach, what could break. Keep the plan small and concrete.", docs: [doc("plan", "Implementation Plan", "docs/feature/plan.md", "# Implementation plan\n## Goal\n## Approach\n## Files to change\n## Risks\n## Test plan", "Names every file to change and how to verify it.")] },
-      { id: "developer", title: "Developer", role: "developer", runtime: "codex", instructions: "Implement the plan in the codebase with tests. Keep commits small. Summarise what you changed.", docs: [doc("changes", "Change Summary", "docs/feature/changes.md", "# What changed\n## Summary\n## Files\n## How to try it\n## Follow-ups", "Lists every changed file and how to run the new tests.")] },
+      { id: "developer", title: "Developer", role: "developer", runtime: "claude-code", instructions: "Implement the plan in the codebase with tests. Keep commits small. Summarise what you changed.", docs: [doc("changes", "Change Summary", "docs/feature/changes.md", "# What changed\n## Summary\n## Files\n## How to try it\n## Follow-ups", "Lists every changed file and how to run the new tests.")] },
       { id: "qa", title: "QA Engineer", role: "qa", runtime: "claude-code", instructions: "Verify the feature by actually running it and its tests. Report what works, what doesn't, with evidence.", docs: [doc("verification", "Verification Report", "docs/feature/verification.md", "# Verification\n## What I tested\n## Results (pass/fail with evidence)\n## Bugs found\n## Verdict", "Every acceptance criterion has a pass/fail with evidence.")] },
     ],
   },
@@ -158,7 +158,7 @@ export const TEAM_TEMPLATES: TeamTemplate[] = [
     workflow: "sequential",
     members: [
       { id: "investigator", title: "Investigator", role: "investigator", runtime: "claude-code", instructions: "Reproduce the bug, then find the root cause. Don't fix it yet; explain it.", docs: [doc("root-cause", "Root Cause Report", "docs/bugs/root-cause.md", "# Root cause\n## How to reproduce\n## What happens vs expected\n## Root cause (file:line)\n## Proposed fix", "Includes exact reproduction steps and the file/line at fault.")] },
-      { id: "fixer", title: "Fixer", role: "developer", runtime: "codex", instructions: "Fix the root cause described by the investigator, with a regression test that fails before the fix.", docs: [doc("fix", "Fix Notes", "docs/bugs/fix.md", "# Fix\n## Change\n## Regression test\n## Side effects checked", "Names the regression test and shows it failing before the fix.")] },
+      { id: "fixer", title: "Fixer", role: "developer", runtime: "claude-code", instructions: "Fix the root cause described by the investigator, with a regression test that fails before the fix.", docs: [doc("fix", "Fix Notes", "docs/bugs/fix.md", "# Fix\n## Change\n## Regression test\n## Side effects checked", "Names the regression test and shows it failing before the fix.")] },
       { id: "qa", title: "Verifier", role: "qa", runtime: "claude-code", instructions: "Confirm the bug is gone using the original reproduction, and that nothing nearby broke.", docs: [doc("verify", "Verification", "docs/bugs/verification.md", "# Verification\n## Original repro: result\n## Related checks\n## Verdict", "The original reproduction now passes.")] },
     ],
   },
@@ -166,12 +166,12 @@ export const TEAM_TEMPLATES: TeamTemplate[] = [
     id: "code-review",
     rigName: "review-pair",
     title: "Code Review Pair",
-    summary: "Two independent reviewers (Claude and Codex) review the same change.",
+    summary: "Two independent reviewers look at the same change from different angles.",
     bestFor: "A second and third opinion before merging",
     workflow: "parallel",
     members: [
-      { id: "reviewer-claude", title: "Reviewer (Claude)", role: "reviewer", runtime: "claude-code", instructions: "Review the change for bugs, security issues and missing tests. Rank findings by severity with file:line.", docs: [doc("review-claude", "Review — Claude", "docs/review/claude.md", "# Review\n## Summary\n## Findings (severity, file:line, why, fix)\n## Verdict", "Every finding has a severity and a file:line.")] },
-      { id: "reviewer-codex", title: "Reviewer (Codex)", role: "reviewer", runtime: "codex", instructions: "Review the change for bugs, security issues and missing tests. Rank findings by severity with file:line.", docs: [doc("review-codex", "Review — Codex", "docs/review/codex.md", "# Review\n## Summary\n## Findings (severity, file:line, why, fix)\n## Verdict", "Every finding has a severity and a file:line.")] },
+      { id: "reviewer-claude", title: "Reviewer A", role: "reviewer", runtime: "claude-code", instructions: "Review the change for bugs, security issues and missing tests. Rank findings by severity with file:line.", docs: [doc("review-claude", "Review A", "docs/review/claude.md", "# Review\n## Summary\n## Findings (severity, file:line, why, fix)\n## Verdict", "Every finding has a severity and a file:line.")] },
+      { id: "reviewer-codex", title: "Reviewer B", role: "reviewer", runtime: "claude-code", instructions: "Review the change for bugs, security issues and missing tests. Rank findings by severity with file:line.", docs: [doc("review-codex", "Review B", "docs/review/codex.md", "# Review\n## Summary\n## Findings (severity, file:line, why, fix)\n## Verdict", "Every finding has a severity and a file:line.")] },
     ],
   },
   {

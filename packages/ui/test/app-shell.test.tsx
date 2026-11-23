@@ -154,11 +154,11 @@ describe("AppShell — Phase 2 chrome", () => {
       expect(container.querySelector("[data-testid='discovery-toggle']")).toBeNull();
     });
 
-    it("Settings rail icon points to /settings (SC-7: Settings in center, NOT drawer)", async () => {
+    it("Settings rail icon opens the Agent API settings (SC-7: Settings in center, NOT drawer)", async () => {
       const { container } = await renderAt("/");
       const settingsIcon = container.querySelector("[data-testid='rail-settings']") as HTMLAnchorElement | null;
       expect(settingsIcon).toBeTruthy();
-      expect(settingsIcon?.getAttribute("href")).toBe("/settings");
+      expect(settingsIcon?.getAttribute("href")).toBe("/settings/agent-api");
     });
   });
 
