@@ -62,6 +62,17 @@ function nodeCheck(): ReadinessCheck {
   };
 }
 
+/** `rig office --help` of the rig agents will run; null when it can't be run at all. */
+export type RigProbe = (rigPath: string) => Promise<string | null>;
+
+export const realRigProbe: RigProbe = (rigPath) =>
+  new Promise((resolve) => {
+    execFile(rigPath, ["office", "--help"], { timeout: 10_000 }, (err, stdout, stderr) => {
+      const out = `${stdout ?? ""}${stderr ?? ""}`;
+      resolve(out || (err ? null : ""));
+    });
+  });
+
 async function toolCheck(lookup: ShellLookup, cmd: string, title: string, opts: { required: boolean; fix: string; missing: string }): Promise<ReadinessCheck> {
   const found = await lookup(cmd);
   return found.path
@@ -69,7 +80,7 @@ async function toolCheck(lookup: ShellLookup, cmd: string, title: string, opts: 
     : { id: cmd, title, state: opts.required ? "fail" : "warn", detail: opts.missing, fixCommand: opts.fix, required: opts.required };
 }
 
-export async function readReadiness(opts: { dispatch: Dispatch; lookup?: ShellLookup; agentApiHome?: string }): Promise<ReadinessReport> {
+export async function readReadiness(opts: { dispatch: Dispatch; lookup?: ShellLookup; agentApiHome?: string; rigProbe?: RigProbe }): Promise<ReadinessReport> {
   const lookup = opts.lookup ?? loginShellLookup;
   const [rig, tmux, claude, config, people] = await Promise.all([
     lookup("rig"),
@@ -83,11 +94,23 @@ export async function readReadiness(opts: { dispatch: Dispatch; lookup?: ShellLo
   const checks: ReadinessCheck[] = [];
   checks.push(nodeCheck());
   checks.push(await toolCheck(once, "tmux", "tmux", { required: true, fix: "brew install tmux", missing: "Agents run inside tmux, and it isn't installed." }));
-  checks.push(await toolCheck(once, "rig", "rig command for agents", {
+  const rigCheck = await toolCheck(once, "rig", "rig command for agents", {
     required: true,
     fix: "npm install -g ./packages/cli   # from your openrig checkout",
     missing: "Agents can't find `rig` in their login shell, so they can't hand work to each other or ask you questions. An alias in ~/.zshrc doesn't count.",
-  }));
+  });
+  if (rigCheck.state === "ok" && rig.path) {
+    // An older global rig builds Word/Excel documents the old way (the model's text kept under the new content).
+    const help = await (opts.rigProbe ?? realRigProbe)(rig.path).catch(() => null);
+    if (help !== null && !help.includes("--style")) {
+      Object.assign(rigCheck, {
+        state: "fail",
+        detail: `The rig agents run (${rig.path}) is older than this OpenRig: it has no \`rig office --style\`, so Word/Excel documents would keep the sample's own text. Reinstall it from this checkout.`,
+        fixCommand: "npm install -g ./packages/cli   # from your openrig checkout, after npm run build",
+      });
+    }
+  }
+  checks.push(rigCheck);
   checks.push(await toolCheck(once, "claude", "Claude Code", { required: true, fix: "npm install -g @anthropic-ai/claude-code", missing: "Not installed. Every agent runs on Claude Code." }));
 
   // Agents run on the Anthropic API key, base URL and model from Settings, not on a Claude/Codex sign-in.

@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   Check,
   CircleDollarSign,
+  Code2,
   Clock,
   Hand,
   Download,
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 import { MarkdownViewer } from "../markdown/MarkdownViewer.js";
 import { OfficePreview } from "./OfficePreview.js";
+import { CodeOutput } from "./CodeOutput.js";
 import { ProgressiveTerminal } from "../terminal/ProgressiveTerminal.js";
 import {
   outputUrl,
@@ -263,7 +265,9 @@ function MemberCard({ member, selection, onSelect, onSelectMember }: {
                   onClick={() => onSelect(d.id)}
                   className="fx-row gap-2 py-1.5 pl-2"
                 >
-                  <FileText className={cn("h-4 w-4 shrink-0", d.exists ? "text-[color:var(--fx-primary-text)]" : "text-[color:var(--fx-subtle)]")} />
+                  {d.kind === "code"
+                    ? <Code2 className={cn("h-4 w-4 shrink-0", !d.exists ? "text-[color:var(--fx-subtle)]" : d.check?.status === "failed" || d.check?.status === "error" ? "text-[color:var(--fx-danger)]" : d.check?.status === "passed" ? "text-[color:var(--fx-success)]" : "text-[color:var(--fx-primary-text)]")} />
+                    : <FileText className={cn("h-4 w-4 shrink-0", d.exists ? "text-[color:var(--fx-primary-text)]" : "text-[color:var(--fx-subtle)]")} />}
                   <span className={cn("min-w-0 flex-1 truncate text-[13px]", !d.exists && "text-[color:var(--fx-subtle)]")}>{d.title}</span>
                   {d.exists ? (
                     <span className={cn("h-2 w-2 shrink-0 rounded-full")} title={review.label} style={{ background: `var(--fx-${review.tone === "neutral" ? "subtle" : review.tone})` }} />
@@ -281,9 +285,10 @@ function MemberCard({ member, selection, onSelect, onSelectMember }: {
 }
 
 function OutputPanel({ runId, member, deliverable, canRework }: { runId: string; member: RunMember; deliverable: RunDeliverable; canRework: boolean }) {
-  const office = isOfficePath(deliverable.path);
+  const isCode = deliverable.kind === "code";
+  const office = !isCode && isOfficePath(deliverable.path);
   const version = deliverable.exists ? deliverable.modifiedAt : null;
-  const output = useRunOutput(runId, member.id, deliverable.id, office ? null : version);
+  const output = useRunOutput(runId, member.id, deliverable.id, office || isCode ? null : version);
   const officePreview = useRunOfficePreview(runId, member.id, deliverable.id, office ? version : null);
   const review = useReview(runId);
   const [feedback, setFeedback] = useState("");
@@ -305,7 +310,7 @@ function OutputPanel({ runId, member, deliverable, canRework }: { runId: string;
     <section className="fx-card" data-testid="workspace-output">
       <header className="fx-card-head flex-wrap">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="fx-empty-icon h-10 w-10 shrink-0 rounded-[10px]"><FileText className="!h-5 !w-5" /></span>
+          <span className="fx-empty-icon h-10 w-10 shrink-0 rounded-[10px]">{isCode ? <Code2 className="!h-5 !w-5" /> : <FileText className="!h-5 !w-5" />}</span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="fx-h2 truncate">{deliverable.title}</h2>
@@ -322,7 +327,7 @@ function OutputPanel({ runId, member, deliverable, canRework }: { runId: string;
               {deliverable.exists ? (
                 <>
                   <span>·</span>
-                  <span>{Math.max(1, Math.round((deliverable.size ?? 0) / 1024))} KB, updated {deliverable.modifiedAt ? timeAgo(deliverable.modifiedAt) : ""}</span>
+                  <span>{isCode ? `${deliverable.files ?? 0} files` : `${Math.max(1, Math.round((deliverable.size ?? 0) / 1024))} KB`}, updated {deliverable.modifiedAt ? timeAgo(deliverable.modifiedAt) : ""}</span>
                 </>
               ) : null}
             </div>
@@ -330,9 +335,11 @@ function OutputPanel({ runId, member, deliverable, canRework }: { runId: string;
         </div>
         {deliverable.exists ? (
           <div className="flex items-center gap-2" data-testid="workspace-review-actions">
-            <a href={outputUrl(runId, member.id, deliverable.id, true)} data-testid="workspace-download" className="fx-btn fx-btn-ghost fx-btn-sm">
-              <Download /> Download
-            </a>
+            {isCode ? null : (
+              <a href={outputUrl(runId, member.id, deliverable.id, true)} data-testid="workspace-download" className="fx-btn fx-btn-ghost fx-btn-sm">
+                <Download /> Download
+              </a>
+            )}
             <Button size="sm" data-testid="workspace-ask-rework" disabled={review.isPending || !canRework} onClick={() => setAsking((v) => !v)} title={canRework ? undefined : "The team must be running"}>
               <PenLine /> Ask for changes
             </Button>
@@ -384,7 +391,9 @@ function OutputPanel({ runId, member, deliverable, canRework }: { runId: string;
               </div>
             ) : null}
 
-            {office ? (
+            {isCode ? (
+              <CodeOutput runId={runId} member={member} deliverable={deliverable} onAskFix={canRework ? (text) => { setFeedback(text); setAsking(true); } : undefined} />
+            ) : office ? (
               <div data-testid="workspace-output-content">
                 {officePreview.isLoading ? (
                   <p className="fx-small">Loading…</p>

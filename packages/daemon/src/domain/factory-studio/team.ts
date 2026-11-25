@@ -24,6 +24,10 @@ export interface FactoryDeliverable {
   acceptance: string;
   /** Word/Excel form to follow (office template library id). Only for .docx / .xlsx paths. */
   template?: string;
+  /** "code": path is a folder of source code, verified by `check`. Absent means a document file. */
+  kind?: "code";
+  /** Code only: the build/test command run inside the folder. Empty: the folder's factory-check.sh, else detected. */
+  check?: string;
 }
 
 /** The kind of file a deliverable is, from its path. */
@@ -184,7 +188,12 @@ export function parseFactoryTeamInput(raw: unknown): { ok: true; team: FactoryTe
         if (owner) errors.push(`${dp}.path: "${outPath}" is already the output of ${owner}`);
         outputPaths.set(outPath, `${id}/${did}`);
       }
-      const template = str(d.template);
+      const kind = str(d.kind);
+      if (kind && kind !== "code" && kind !== "document") errors.push(`${dp}.kind: must be "document" or "code"`);
+      const isCode = kind === "code";
+      const check = isCode ? longText(d.check, `${dp}.check`, errors).trim() : "";
+      if (check.length > 2000) errors.push(`${dp}.check: at most 2000 characters`);
+      const template = isCode ? "" : str(d.template);
       if (template) {
         if (!TEMPLATE_ID.test(template)) errors.push(`${dp}.template: invalid form id "${template}"`);
         else if (deliverableFormat(outPath) !== "docx" && deliverableFormat(outPath) !== "xlsx") {
@@ -198,6 +207,7 @@ export function parseFactoryTeamInput(raw: unknown): { ok: true; team: FactoryTe
         outline: longText(d.outline, `${dp}.outline`, errors),
         acceptance: longText(d.acceptance, `${dp}.acceptance`, errors),
         ...(template ? { template } : {}),
+        ...(isCode ? { kind: "code" as const, ...(check ? { check } : {}) } : {}),
       };
     });
 

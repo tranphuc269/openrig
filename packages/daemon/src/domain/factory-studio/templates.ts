@@ -13,6 +13,9 @@ export interface DeliverableTemplate {
   suggestedRole: string;
   outline: string;
   acceptance: string;
+  /** "code": a folder of source code checked by `check` (empty: the folder's factory-check.sh or a guess). */
+  kind?: "code";
+  check?: string;
 }
 
 export const DELIVERABLE_TEMPLATES: DeliverableTemplate[] = [
@@ -113,6 +116,47 @@ export const DELIVERABLE_TEMPLATES: DeliverableTemplate[] = [
       "## Monitoring and alerts",
     ].join("\n"),
     acceptance: "A new engineer can deploy and roll back by following the steps alone.",
+  },
+  {
+    id: "backend-code",
+    title: "Backend source code",
+    path: "backend",
+    suggestedRole: "fullstack",
+    kind: "code",
+    check: "",
+    outline: [
+      "The API and business logic from the API design, the database schema with migrations, seed data for a demo,",
+      "and automated tests for the main flows. A README with how to run it.",
+    ].join("\n"),
+    acceptance: "Installs and builds from a clean checkout; the tests pass; every API in the design is implemented.",
+  },
+  {
+    id: "frontend-code",
+    title: "Frontend source code",
+    path: "frontend",
+    suggestedRole: "fullstack",
+    kind: "code",
+    check: "",
+    outline: [
+      "Every screen from the requirements, calling the real backend API, responsive on phone and desktop.",
+      "A README with how to run it against the backend.",
+    ].join("\n"),
+    acceptance: "Installs and builds from a clean checkout; its tests pass; every screen in the requirements exists and uses the real API.",
+  },
+  {
+    id: "implementation-report",
+    title: "Implementation Report",
+    path: "docs/implementation/report.md",
+    suggestedRole: "fullstack",
+    outline: [
+      "# Implementation Report",
+      "## How to run (database, backend, frontend, environment variables)",
+      "## Demo accounts and sample data",
+      "## What was built (each requirement id → screens and APIs)",
+      "## Checks actually run (commands and their real output: build, tests, manual run)",
+      "## Known limits and remaining work",
+    ].join("\n"),
+    acceptance: "The software was really built and run: the report gives the exact commands to start it and the real results of build and tests; every requirement is mapped to screens and APIs, or listed as not done.",
   },
   {
     id: "test-cases-xlsx",

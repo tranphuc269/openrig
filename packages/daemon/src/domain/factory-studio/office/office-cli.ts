@@ -181,11 +181,20 @@ async function run(command: string | undefined, rest: string[]): Promise<void> {
     const abs = writeOut(out, buffer);
     process.stdout.write([
       `Wrote ${abs}`,
-      report.content === "body" ? (report.frontMatter ? "Kept the form's front pages (cover, change log, sign-off, table of contents); the body is your draft. Word refreshes the table of contents when the file opens." : "New body written in the form's look.") : report.content === "placeholder" ? "Content placed at {{content}}." : report.content === "appended" ? "Content added at the end of the form (the form's own text is still above it; use --style for a new document)." : "",
+      report.content === "body" ? (report.frontMatter ? "Kept the form's front pages (cover, change log, sign-off, table of contents); the body is your draft. Word refreshes the table of contents when the file opens." : "New body written in the form's look.") : report.content === "placeholder" ? "Content placed at {{content}}." : report.content === "appended" ? "Content added at the end of the document." : "",
       list("Filled", report.filled.map((k) => (k.startsWith("<") || k.startsWith("row:") ? k : `{{${k}}}`))),
       list("Still empty (no value given)", report.missing.map((k) => (k.startsWith("<") || k.startsWith("row:") ? k : `{{${k}}}`))),
       list("Not in the form (ignored)", report.unused),
     ].filter(Boolean).join("\n") + "\n");
+    if (report.problems.length) {
+      process.stderr.write([
+        "",
+        `office: the document was written, but it is NOT ready (${report.problems.length} problem${report.problems.length === 1 ? "" : "s"}):`,
+        ...report.problems.map((p) => `  - ${p}`),
+        "Fix the draft or the vars (an intentional blank field is \"\"), build again, and only hand off when this passes.",
+      ].join("\n") + "\n");
+      process.exit(3);
+    }
     return;
   }
 

@@ -15,6 +15,7 @@ describe("factory readiness + folder picker", () => {
   let defaultPerson: string | null;
   let usageWindows: boolean;
   let usageRows: unknown[] | undefined;
+  let rigHelp: string | null;
 
   const lookup: ShellLookup = async (cmd) => (installed[cmd] ? { path: installed[cmd]!, version: `${cmd} 1.0` } : { path: null, version: null });
   const dispatch = async (_m: string, p: string) => {
@@ -26,6 +27,7 @@ describe("factory readiness + folder picker", () => {
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "factory-ready-"));
+    rigHelp = "  docx --style <form.docx> --content <draft.md> --out <file.docx>";
     home = join(tmp, "openrig-home");
     mkdirSync(home);
     installed = { tmux: "/opt/homebrew/bin/tmux", claude: "/usr/local/bin/claude" };
@@ -39,7 +41,7 @@ describe("factory readiness + folder picker", () => {
     const a = new Hono();
     a.route("/api/factory", factoryRoutes({
       teamsRoot: () => join(tmp, "teams"), runsRoot: join(tmp, "runs"), dispatch: dispatch as never,
-      readiness: { lookup, home },
+      readiness: { lookup, home, rigProbe: async () => rigHelp },
       agentApiHome: home,
     }));
     return a;
@@ -73,6 +75,17 @@ describe("factory readiness + folder picker", () => {
     expect(String(api.detail)).toContain("claude-sonnet-5-5");
     expect(JSON.stringify(r)).not.toContain("sk-ant-secret");
     expect(byId(r.checks, "person")).toMatchObject({ state: "ok" });
+  });
+
+  it("fails when the rig agents run is older than this OpenRig (no rig office --style)", async () => {
+    installed.rig = "/usr/local/bin/rig";
+    saveAgentApiSettings({ apiKey: "sk-ant-test-1234" }, home, {});
+    rigHelp = "error: unknown command 'office'";
+    const report = await (await req("GET", "/api/factory/readiness")).json() as { ready: boolean; checks: Array<{ id: string; state: string; detail: string }> };
+    const rig = report.checks.find((c) => c.id === "rig")!;
+    expect(rig.state).toBe("fail");
+    expect(rig.detail).toContain("older than this OpenRig");
+    expect(report.ready).toBe(false);
   });
 
   it("requires Claude Code", async () => {

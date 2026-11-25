@@ -268,7 +268,7 @@ function Deliverables({ member, takenPaths, templates, set }: {
                   <TextInput value={d.title} onChange={(e) => update(i, { ...d, title: e.target.value })} />
                 </Field>
                 <Field
-                  label="Saved to (in the project)"
+                  label={d.kind === "code" ? "Folder (in the project)" : "Saved to (in the project)"}
                   hint={pathClash ? <span className="text-[color:var(--fx-danger)]">Another document already uses this path.</span> : undefined}
                 >
                   <TextInput value={d.path} className="fx-mono" onChange={(e) => update(i, { ...d, path: e.target.value.trim() })} placeholder="docs/design/system-design.md" />
@@ -279,8 +279,8 @@ function Deliverables({ member, takenPaths, templates, set }: {
               </Button>
             </div>
             <DocumentFormat d={d} onChange={(next) => update(i, next)} />
-            <Field label={outlineLabel(d.path).label}>
-              <TextArea value={d.outline} placeholder={outlineLabel(d.path).placeholder} onChange={(e) => update(i, { ...d, outline: e.target.value })} className="fx-mono min-h-[150px] text-[12.5px]" />
+            <Field label={outlineLabel(d.path, d.kind).label}>
+              <TextArea value={d.outline} placeholder={outlineLabel(d.path, d.kind).placeholder} onChange={(e) => update(i, { ...d, outline: e.target.value })} className="fx-mono min-h-[150px] text-[12.5px]" />
             </Field>
             <Field label="Done when">
               <TextInput value={d.acceptance} onChange={(e) => update(i, { ...d, acceptance: e.target.value })} placeholder="Every requirement maps to a test case" />

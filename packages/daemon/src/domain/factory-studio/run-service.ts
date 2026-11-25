@@ -9,6 +9,7 @@ import * as path from "node:path";
 import type { FactoryMember, FactoryTeam } from "./team.js";
 import { sessionFor } from "./generator.js";
 import { FactoryRunStore, reviewKey, type FactoryRun, type ReviewDecision } from "./run-store.js";
+import { readCodeFile, resolveCheckCommand, runCheck, scanCode, type CodeCheck, type CodeScan, type RunningCheck } from "./code-check.js";
 
 export type Dispatch = (method: "GET" | "POST", apiPath: string, body?: unknown) => Promise<{ status: number; data: unknown }>;
 
@@ -28,6 +29,8 @@ export interface RunServiceOpts {
   pollMs?: number;
   readyTimeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  /** Source-code checks: time limit, the shell, and whether a hand-off starts one on its own. */
+  checks?: { timeoutMs?: number; shell?: string; auto?: boolean; quietMs?: number; maxParallel?: number; scanCacheMs?: number };
 }
 
 export interface SeatState {
@@ -43,6 +46,12 @@ export interface DeliverableState {
   id: string;
   title: string;
   path: string;
+  kind: "document" | "code";
+  /** Code: files in the folder (dependencies and build output not counted). */
+  files: number | null;
+  /** Code: the last build/test check, and the command the next one runs (null: none can be found). */
+  check: CodeCheck | null;
+  checkCommand: string | null;
   exists: boolean;
   size: number | null;
   modifiedAt: string | null;
@@ -277,21 +286,35 @@ export class FactoryRunService {
       const seat = seatFrom(nodes.find((n) => n["canonicalSessionName"] === session));
       const deliverables: DeliverableState[] = m.deliverables.map((d) => {
         const abs = resolveDeliverablePath(run.projectDir, d.path);
+        const r = run.reviews[reviewKey(m.id, d.id)];
+        const review = r ? { status: r.status, feedback: r.feedback, rounds: r.rounds, updatedAt: r.updatedAt } : { status: "pending" as const, rounds: 0 };
+        if (d.kind === "code") {
+          const scan: CodeScan = abs ? scanCode(abs, this.opts.checks?.scanCacheMs ?? 4000) : { files: [], latest: null, truncated: false };
+          const check = this.liveCheck(run, m.id, d.id);
+          return {
+            id: d.id, title: d.title, path: d.path, kind: "code" as const,
+            files: scan.files.length, check, checkCommand: abs ? resolveCheckCommand(abs, d.check)?.command ?? null : null,
+            exists: scan.files.length > 0, size: null, modifiedAt: scan.latest, review,
+          };
+        }
         let stat: fs.Stats | null = null;
         try {
           stat = abs ? fs.statSync(abs) : null;
         } catch {
           stat = null;
         }
-        const r = run.reviews[reviewKey(m.id, d.id)];
         return {
           id: d.id,
           title: d.title,
           path: d.path,
+          kind: "document" as const,
+          files: null,
+          check: null,
+          checkCommand: null,
           exists: !!stat?.isFile() && stat.size > 0,
           size: stat?.isFile() ? stat.size : null,
           modifiedAt: stat?.isFile() ? stat.mtime.toISOString() : null,
-          review: r ? { status: r.status, feedback: r.feedback, rounds: r.rounds, updatedAt: r.updatedAt } : { status: "pending", rounds: 0 },
+          review,
         };
       });
       return { id: m.id, title: m.title, runtime: m.runtime, session, seat, deliverables, phase: "working" as MemberPhase };
@@ -325,7 +348,147 @@ export class FactoryRunService {
     else if (progress.total > 0 && progress.delivered === progress.total && !all.some((d) => d.review.status === "rework")) phase = "review";
     else phase = "working";
 
+    // A member who has handed everything in gets their code checked once the files stop changing.
+    if (team && run.status === "running" && (this.opts.checks?.auto ?? true)) {
+      let started = false;
+      for (const m of members) {
+        if (!m.deliverables.every((d) => d.exists)) continue;
+        for (const d of m.deliverables) {
+          if (d.kind !== "code" || !this.shouldAutoCheck(run, m.id, d)) continue;
+          if (this.startCheck(run.id, team, m.id, d.id, "auto")) {
+            started = true;
+            const now = this.store.get(run.id)?.checks?.[reviewKey(m.id, d.id)];
+            d.check = now ?? d.check;
+          }
+        }
+      }
+      if (started) return { run: this.store.get(run.id) ?? run, phase, workflow: team.workflow, teamMissing: false, members, progress };
+    }
+
     return { run, phase, workflow: team?.workflow ?? null, teamMissing: !team, members, progress };
+  }
+
+  // ── Source-code checks ───────────────────────────────────────────────
+
+  private readonly checksRunning = new Map<string, RunningCheck>();
+
+  private checkKey(runId: string, memberId: string, deliverableId: string): string {
+    return `${runId}:${reviewKey(memberId, deliverableId)}`;
+  }
+
+  /** The stored check, with one left "running" by a daemon restart marked as interrupted. */
+  private liveCheck(run: FactoryRun, memberId: string, deliverableId: string): CodeCheck | null {
+    const key = reviewKey(memberId, deliverableId);
+    const check = run.checks?.[key] ?? null;
+    if (check?.status === "running" && !this.checksRunning.has(this.checkKey(run.id, memberId, deliverableId))) {
+      const fixed: CodeCheck = { ...check, status: "error", finishedAt: new Date().toISOString(), output: `${check.output}\n\n[Factory Studio] Interrupted (the daemon restarted). Run the check again.` };
+      this.store.update(run.id, (r) => { r.checks = { ...(r.checks ?? {}), [key]: fixed }; });
+      return fixed;
+    }
+    return check;
+  }
+
+  private shouldAutoCheck(run: FactoryRun, memberId: string, d: DeliverableState): boolean {
+    if (this.checksRunning.has(this.checkKey(run.id, memberId, d.id))) return false;
+    if (this.checksRunning.size >= (this.opts.checks?.maxParallel ?? 2)) return false;
+    if (!d.modifiedAt) return false;
+    if (Date.now() - Date.parse(d.modifiedAt) < (this.opts.checks?.quietMs ?? 20_000)) return false;
+    const last = d.check;
+    if (!last) return true;
+    if (last.status === "running") return false;
+    if (last.sourceVersion === d.modifiedAt) return false;
+    return !last.finishedAt || Date.now() - Date.parse(last.finishedAt) > 30_000;
+  }
+
+  /** Starts a check; false when one is already running. A folder with no command to run records an error result. */
+  private startCheck(runId: string, team: FactoryTeam, memberId: string, deliverableId: string, trigger: CodeCheck["trigger"]): boolean {
+    const run = this.store.get(runId);
+    if (!run) throw new RunError(404, "run_not_found", `No run "${runId}"`);
+    const member = this.member(team, memberId);
+    const d = member.deliverables.find((x) => x.id === deliverableId);
+    if (!d || d.kind !== "code") throw new RunError(404, "deliverable_not_found", `No source-code output "${deliverableId}" for ${member.title}`);
+    const running = this.checkKey(runId, memberId, deliverableId);
+    if (this.checksRunning.has(running)) return false;
+    const key = reviewKey(memberId, deliverableId);
+    const abs = resolveDeliverablePath(run.projectDir, d.path);
+    if (!abs) throw new RunError(400, "path_escape", `${d.path} resolves outside the project folder`);
+    const scan = scanCode(abs, 0);
+    const cmd = scan.files.length ? resolveCheckCommand(abs, d.check) : null;
+    if (!cmd) {
+      const now = new Date().toISOString();
+      const result: CodeCheck = {
+        status: "error", command: "", source: "detected", trigger, startedAt: now, finishedAt: now, durationMs: 0, exitCode: null,
+        sourceVersion: scan.latest,
+        output: scan.files.length
+          ? `No check command for ${d.path}. Set one for "${d.title}" in Factory Studio, or have ${member.title} add ${d.path}/factory-check.sh.`
+          : `${d.path} has no files yet.`,
+      };
+      this.store.update(runId, (r) => { r.checks = { ...(r.checks ?? {}), [key]: result }; },
+        { kind: "check", member: memberId, message: `Couldn't check ${d.title}: no command to run` });
+      return true;
+    }
+    const handle = runCheck({
+      cwd: abs, command: cmd.command, source: cmd.source, trigger, sourceVersion: scan.latest,
+      timeoutMs: this.opts.checks?.timeoutMs, shell: this.opts.checks?.shell,
+      onStart: (check) => this.store.update(runId, (r) => { r.checks = { ...(r.checks ?? {}), [key]: check }; },
+        { kind: "check", member: memberId, message: `Checking ${d.title}: ${cmd.command}` }),
+    });
+    this.checksRunning.set(running, handle);
+    void handle.done.then((checked) => {
+      this.checksRunning.delete(running);
+      // Files the check itself wrote (a lockfile, generated code) count as checked, so they don't trigger another run.
+      const result: CodeCheck = { ...checked, sourceVersion: scanCode(abs, 0).latest ?? checked.sourceVersion };
+      const secs = Math.round((result.durationMs ?? 0) / 1000);
+      try {
+        this.store.update(runId, (r) => { r.checks = { ...(r.checks ?? {}), [key]: result }; }, {
+          kind: "check", member: memberId,
+          message: result.status === "passed" ? `${d.title}: build and tests passed (${secs}s)` : `${d.title}: check ${result.status} (exit ${result.exitCode ?? "-"}, ${secs}s)`,
+        });
+      } catch { /* run deleted meanwhile */ }
+    });
+    return true;
+  }
+
+  /** Runs the check of a source-code output now (the person's "Run check"). */
+  checkNow(id: string, memberId: string, deliverableId: string): CodeCheck {
+    const run = this.store.get(id);
+    if (!run) throw new RunError(404, "run_not_found", `No run "${id}"`);
+    const team = this.team(run);
+    if (!this.startCheck(id, team, memberId, deliverableId, "manual")) throw new RunError(409, "check_running", "A check is already running for this code");
+    return this.store.get(id)!.checks![reviewKey(memberId, deliverableId)]!;
+  }
+
+  /** Waits for a running check (tests). */
+  async checkSettled(id: string, memberId: string, deliverableId: string): Promise<void> {
+    await this.checksRunning.get(this.checkKey(id, memberId, deliverableId))?.done;
+    await new Promise((r) => setImmediate(r));
+  }
+
+  private codeRoot(id: string, memberId: string, deliverableId: string): { abs: string; title: string } {
+    const run = this.store.get(id);
+    if (!run) throw new RunError(404, "run_not_found", `No run "${id}"`);
+    const member = this.member(this.team(run), memberId);
+    const d = member.deliverables.find((x) => x.id === deliverableId);
+    if (!d || d.kind !== "code") throw new RunError(404, "deliverable_not_found", `No source-code output "${deliverableId}" for ${member.title}`);
+    const abs = resolveDeliverablePath(run.projectDir, d.path);
+    if (!abs) throw new RunError(400, "path_escape", `${d.path} resolves outside the project folder`);
+    return { abs, title: d.title };
+  }
+
+  codeTree(id: string, memberId: string, deliverableId: string): CodeScan {
+    return scanCode(this.codeRoot(id, memberId, deliverableId).abs, 0);
+  }
+
+  codeFile(id: string, memberId: string, deliverableId: string, rel: string): { path: string; content: string; size: number } {
+    const { abs } = this.codeRoot(id, memberId, deliverableId);
+    try {
+      return { path: rel, ...readCodeFile(abs, rel) };
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (/too large/.test(msg)) throw new RunError(413, "too_large", `${rel} is ${msg}`);
+      if (/ENOENT|not a file/.test(msg)) throw new RunError(404, "not_found", `${rel} doesn't exist`);
+      throw new RunError(400, "unreadable", `${rel}: ${msg}`);
+    }
   }
 
   readDeliverable(id: string, memberId: string, deliverableId: string): { content: Buffer; fileName: string; path: string } {
@@ -334,6 +497,7 @@ export class FactoryRunService {
     const member = this.member(this.team(run), memberId);
     const d = member.deliverables.find((x) => x.id === deliverableId);
     if (!d) throw new RunError(404, "deliverable_not_found", `No output "${deliverableId}" for ${member.title}`);
+    if (d.kind === "code") throw new RunError(400, "is_code", `${d.title} is a folder of source code; browse it file by file`);
     const abs = resolveDeliverablePath(run.projectDir, d.path);
     if (!abs) throw new RunError(400, "path_escape", `${d.path} resolves outside the project folder`);
     let stat: fs.Stats;
@@ -371,7 +535,9 @@ export class FactoryRunService {
         `The person reviewed "${d.title}" (${d.path}) and asks for changes:`,
         feedback,
         "",
-        /\.(docx|xlsx)$/i.test(d.path)
+        d.kind === "code"
+          ? `Fix the code in ${d.path}/. Its check must pass before you report done${run.checks?.[reviewKey(member.id, d.id)]?.command ? ` (\`${run.checks[reviewKey(member.id, d.id)]!.command}\`)` : ""}; Factory Studio runs it again when you hand off.`
+          : /\.(docx|xlsx)$/i.test(d.path)
           ? "Update its draft (see your deliverables guidance) and rebuild the same file with `rig office`. Add or update a \"Revision notes\" section listing what you changed, then report done."
           : "Update the same file. Add or update a \"Revision notes\" section at the top listing what you changed, then report done.",
         "Do not hand off to the next member again unless the change affects their documents.",

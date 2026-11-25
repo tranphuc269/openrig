@@ -29,10 +29,28 @@ export interface FactoryRun {
   events: RunEvent[];
 }
 
+export interface CodeCheck {
+  status: "running" | "passed" | "failed" | "error";
+  command: string;
+  source: "team" | "factory-check.sh" | "detected";
+  trigger: "auto" | "manual";
+  startedAt: string;
+  finishedAt?: string;
+  durationMs?: number;
+  exitCode?: number | null;
+  output: string;
+  sourceVersion: string | null;
+}
+
 export interface RunDeliverable {
   id: string;
   title: string;
   path: string;
+  /** "code": a folder of source code with a build/test check. */
+  kind?: "document" | "code";
+  files?: number | null;
+  check?: CodeCheck | null;
+  checkCommand?: string | null;
   exists: boolean;
   size: number | null;
   modifiedAt: string | null;
@@ -179,6 +197,31 @@ export function useStartRun() {
 export function useReview(runId: string) {
   return useRunMutation(runId, (vars: { member: string; deliverable: string; decision: ReviewDecision; feedback?: string }) =>
     request<FactoryRun>(`/api/factory/runs/${encodeURIComponent(runId)}/review`, { method: "POST", body: JSON.stringify(vars) }));
+}
+
+export function useRunCheck(runId: string) {
+  return useRunMutation(runId, (vars: { member: string; deliverable: string }) =>
+    request<CodeCheck>(`/api/factory/runs/${encodeURIComponent(runId)}/checks/${encodeURIComponent(vars.member)}/${encodeURIComponent(vars.deliverable)}`, { method: "POST" }));
+}
+
+/** The files of a source-code output; refetched when the folder changes. */
+export function useCodeTree(runId: string, member: string, deliverable: string, version: string | null) {
+  return useQuery({
+    queryKey: [...KEY, runId, "code", member, deliverable, version],
+    enabled: !!version,
+    queryFn: () => request<{ files: Array<{ path: string; size: number }>; latest: string | null; truncated: boolean }>(
+      `/api/factory/runs/${encodeURIComponent(runId)}/code/${encodeURIComponent(member)}/${encodeURIComponent(deliverable)}`),
+  });
+}
+
+export function useCodeFile(runId: string, member: string, deliverable: string, file: string | null, version: string | null) {
+  return useQuery({
+    queryKey: [...KEY, runId, "code-file", member, deliverable, file, version],
+    enabled: !!file,
+    retry: false,
+    queryFn: () => request<{ path: string; content: string; size: number }>(
+      `/api/factory/runs/${encodeURIComponent(runId)}/code/${encodeURIComponent(member)}/${encodeURIComponent(deliverable)}/file?path=${encodeURIComponent(file!)}`),
+  });
 }
 
 export function useMessageMember(runId: string) {

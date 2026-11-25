@@ -176,12 +176,50 @@ function officeSteps(member: FactoryMember, d: FactoryDeliverable, office: Offic
   return out;
 }
 
+function codeSteps(d: FactoryDeliverable): string[] {
+  const dir = d.path.replace(/\/+$/, "");
+  const out = [
+    `## ${d.title} (source code)`,
+    "",
+    `- **Folder:** \`${dir}/\`. Write the working software here: real source code, not a description of it.`,
+    `- **Deliverable id:** \`${d.id}\``,
+  ];
+  if (d.acceptance) out.push(`- **Done when:** ${d.acceptance}`);
+  if (d.check) {
+    out.push(
+      `- **Check:** when you hand off, Factory Studio runs this inside \`${dir}/\` and shows the result to the person:`,
+      "", "```bash", `cd ${shellQuote(dir)} && ${d.check}`, "```", "",
+      "  Run it yourself first and fix everything until it passes. Hand off only when it passes.",
+    );
+  } else {
+    out.push(
+      `- **Check:** put the exact commands that install, build and test this code in \`${dir}/factory-check.sh\``,
+      "  (it runs as `bash factory-check.sh` inside the folder; exit 0 means success). Factory Studio runs it when you hand off",
+      "  and shows the result to the person. Without that file it guesses from package.json, pyproject.toml, go.mod, …",
+      "",
+      "```bash",
+      `cd ${shellQuote(dir)} && bash factory-check.sh   # run it yourself; fix everything until it passes`,
+      "```",
+      "",
+      "  Hand off only when it passes. Tests must test real behaviour; never make the check pass by skipping or faking them.",
+    );
+  }
+  out.push("  Keep dependencies and build output out of the folder's files you write by hand (node_modules/, dist/, … are ignored).");
+  if (d.outline) out.push("", "What to build:", "", "```markdown", d.outline, "```");
+  out.push("");
+  return out;
+}
+
 function deliverablesMd(member: FactoryMember, office: OfficeToolOptions | undefined, errors: string[]): string {
   if (member.deliverables.length === 0) {
     return "# Your deliverables\n\nNo documents are declared for you. Report your result as a message.\n";
   }
   const parts = ["# Your deliverables", "", "Write each document below at exactly the path shown, relative to your working directory.", ""];
   for (const d of member.deliverables) {
+    if (d.kind === "code") {
+      parts.push(...codeSteps(d));
+      continue;
+    }
     const format = deliverableFormat(d.path);
     parts.push(`## ${d.title}`, "", `- **Path:** \`${d.path}\``, `- **Deliverable id:** \`${d.id}\``);
     if (d.acceptance) parts.push(`- **Done when:** ${d.acceptance}`);

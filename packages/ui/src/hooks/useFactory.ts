@@ -12,6 +12,10 @@ export interface FactoryDeliverable {
   acceptance: string;
   /** Word/Excel form id (only for .docx / .xlsx paths). */
   template?: string;
+  /** "code": path is a folder of source code, checked by `check` after hand-off. */
+  kind?: "code";
+  /** Build/test command run in the folder. Empty: the agent's factory-check.sh, else detected. */
+  check?: string;
 }
 
 export interface FactoryCustomSkill {
@@ -77,6 +81,8 @@ export interface DeliverableTemplate {
   suggestedRole: string;
   outline: string;
   acceptance: string;
+  kind?: "code";
+  check?: string;
 }
 
 export interface FactoryPreview {

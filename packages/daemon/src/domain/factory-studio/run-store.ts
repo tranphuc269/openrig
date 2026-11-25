@@ -11,13 +11,14 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { randomBytes } from "node:crypto";
+import type { CodeCheck } from "./code-check.js";
 
 export type RunStatus = "launching" | "running" | "failed" | "stopped";
 export type ReviewDecision = "pending" | "approved" | "rework";
 
 export interface RunEvent {
   at: string;
-  kind: "created" | "launch" | "launched" | "task_sent" | "launch_failed" | "review" | "message" | "stopped" | "error";
+  kind: "created" | "launch" | "launched" | "task_sent" | "launch_failed" | "review" | "message" | "stopped" | "error" | "check";
   message: string;
   member?: string;
 }
@@ -43,6 +44,8 @@ export interface FactoryRun {
   updatedAt: string;
   /** Keyed by "<memberId>/<deliverableId>". */
   reviews: Record<string, DeliverableReview>;
+  /** Build/test checks of source-code outputs, keyed like reviews. */
+  checks?: Record<string, CodeCheck>;
   events: RunEvent[];
 }
 

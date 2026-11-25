@@ -139,6 +139,24 @@ describe("Word documents", () => {
     expect(text.match(/Giới thiệu/g)).toHaveLength(1);
   });
 
+  it("cuts the form's body even with --template, finds the body without heading styles, and reports leftovers", async () => {
+    // A form whose section titles are plain bold paragraphs, not Heading styles.
+    const plain = (await buildDocx({ markdown: "Trang bìa <Tên dự án>\n\n**1. GIỚI THIỆU**\n\n[Hướng dẫn: viết mục đích ở đây]\n\nVí dụ: quản lý hợp đồng" })).buffer;
+    const { buffer, report } = await buildDocx({
+      template: plain,
+      mode: "fill",
+      markdown: "# 1. GIỚI THIỆU\n\nHệ thống E-learning.\n\n[Gợi ý của mẫu chưa xoá, dài hơn mười hai ký tự]",
+    });
+    expect(report.content).toBe("body");
+    const text = await readDocx(buffer);
+    expect(text).toContain("Trang bìa <Tên dự án>");
+    expect(text).toContain("Hệ thống E-learning");
+    expect(text).not.toContain("quản lý hợp đồng");
+    expect(text).not.toContain("Hướng dẫn");
+    expect(report.problems).toContain("unfilled field <Tên dự án>");
+    expect(report.problems.some((p) => p.startsWith("hint text from the model"))).toBe(true);
+  });
+
   it("rejects files that aren't Word documents", async () => {
     await expect(buildDocx({ template: Buffer.from("not a zip") })).rejects.toThrow(/Not a Word file/);
   });

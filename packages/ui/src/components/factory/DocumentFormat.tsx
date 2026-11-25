@@ -1,20 +1,31 @@
 // Factory Studio — a document's file format (Markdown / Word / Excel) and the form it follows.
 import { useRef, type ReactNode } from "react";
-import { Download, FileSpreadsheet, FileText, FileType2, Upload } from "lucide-react";
+import { Code2, Download, FileSpreadsheet, FileText, FileType2, Upload } from "lucide-react";
 import type { FactoryDeliverable } from "../../hooks/useFactory.js";
 import {
   deliverableFormat, pathWithFormat, templateFileUrl, useOfficeTemplateInspection, useOfficeTemplates, useUploadOfficeTemplate,
   type OfficeFormat,
 } from "../../hooks/useOfficeTemplates.js";
-import { Button, Field, Select } from "./fields.js";
+import { Button, Field, Select, TextInput } from "./fields.js";
 
-const FORMATS: Array<{ id: "markdown" | OfficeFormat; label: string; icon: ReactNode }> = [
+type Kind = "markdown" | OfficeFormat | "code";
+
+const FORMATS: Array<{ id: Kind; label: string; icon: ReactNode }> = [
   { id: "markdown", label: "Markdown", icon: <FileText className="h-3.5 w-3.5" /> },
   { id: "docx", label: "Word", icon: <FileType2 className="h-3.5 w-3.5" /> },
   { id: "xlsx", label: "Excel", icon: <FileSpreadsheet className="h-3.5 w-3.5" /> },
+  { id: "code", label: "Source code", icon: <Code2 className="h-3.5 w-3.5" /> },
 ];
 
-export function outlineLabel(path: string): { label: string; placeholder: string } {
+/** A folder name for source code made from a document path: docs/backend/report.md → backend. */
+function folderFrom(p: string): string {
+  const parts = p.replace(/\.(md|markdown|docx|xlsx|txt)$/i, "").split("/").filter(Boolean);
+  const pick = parts.length > 1 && parts[0] === "docs" ? parts[1]! : parts[parts.length - 1] ?? "app";
+  return pick || "app";
+}
+
+export function outlineLabel(path: string, kind?: "code"): { label: string; placeholder: string } {
+  if (kind === "code") return { label: "What to build", placeholder: "Every screen in the requirements, calling the real API, responsive.\nA README with how to run it." };
   const f = deliverableFormat(path);
   if (f === "xlsx") return { label: "What goes in the workbook", placeholder: "Sheet \"Test cases\": one row per test from row 5 — ID, description, steps, expected result, status.\nSheet \"Summary\": B2 = project name, B3 = number of tests." };
   if (f === "docx") return { label: "Content outline", placeholder: "# Overview\n## Scope\n## Requirements\n## Risks" };
@@ -60,15 +71,18 @@ export function DocumentFormat({ d, onChange }: { d: FactoryDeliverable; onChang
   const forms = useOfficeTemplates();
   const upload = useUploadOfficeTemplate();
   const fileInput = useRef<HTMLInputElement>(null);
-  const office = format === "docx" || format === "xlsx";
+  const isCode = d.kind === "code";
+  const office = !isCode && (format === "docx" || format === "xlsx");
   const matching = (forms.data ?? []).filter((t) => t.format === format);
   const current = d.template ? (forms.data ?? []).find((t) => t.id === d.template) : undefined;
   const missing = !!d.template && forms.isSuccess && !current;
 
-  const setFormat = (next: "markdown" | OfficeFormat) => {
-    if (next === format) return;
-    const { template: _drop, ...rest } = d;
-    onChange({ ...rest, path: pathWithFormat(d.path, next) });
+  const current_kind: Kind = isCode ? "code" : format === "docx" || format === "xlsx" ? format : "markdown";
+  const setFormat = (next: Kind) => {
+    if (next === current_kind) return;
+    const { template: _drop, kind: _kind, check: _check, ...rest } = d;
+    if (next === "code") { onChange({ ...rest, kind: "code", path: folderFrom(d.path) }); return; }
+    onChange({ ...rest, path: isCode ? `docs/${d.path.replace(/\/+$/, "")}.${next === "markdown" ? "md" : next}` : pathWithFormat(d.path, next) });
   };
 
   const onFile = (file: File | undefined) => {
@@ -87,12 +101,36 @@ export function DocumentFormat({ d, onChange }: { d: FactoryDeliverable; onChang
         <span className="fx-label">File type</span>
         <div className="fx-segment" role="group" aria-label="File type" data-testid="factory-document-format">
           {FORMATS.map((f) => (
-            <button key={f.id} type="button" aria-pressed={format === f.id} onClick={() => setFormat(f.id)} className="inline-flex items-center gap-1.5">
+            <button key={f.id} type="button" aria-pressed={current_kind === f.id} onClick={() => setFormat(f.id)} className="inline-flex items-center gap-1.5">
               {f.icon} {f.label}
             </button>
           ))}
         </div>
       </div>
+
+      {isCode ? (
+        <div className="fx-inset flex flex-col gap-2.5 p-3" data-testid="factory-code-options">
+          <Field
+            label="Check command (build and test)"
+            hint="Runs inside the folder when the member hands off, and again whenever you press Run check. Leave empty: the agent writes factory-check.sh in the folder, or it's detected from package.json, pyproject.toml, go.mod…"
+          >
+            <TextInput
+              data-testid="factory-code-check"
+              className="fx-mono"
+              value={d.check ?? ""}
+              placeholder="npm ci && npm run build && npm test"
+              onChange={(e) => {
+                const { check: _drop, ...rest } = d;
+                onChange(e.target.value ? { ...rest, check: e.target.value } : rest);
+              }}
+            />
+          </Field>
+          <p className="fx-tiny">
+            The member writes working software in this folder and must make the check pass before handing off. You see the files,
+            the check's result and its output on the task page.
+          </p>
+        </div>
+      ) : null}
 
       {office ? (
         <div className="fx-inset flex flex-col gap-2.5 p-3">

@@ -11,6 +11,16 @@ export interface MemberPreset {
   templates: string[];
 }
 
+const FULLSTACK_INSTRUCTIONS = [
+  "You design the details AND write the software, backend and frontend. Documents alone are not done.",
+  "1. Read the requirements and the system design from the members before you.",
+  "2. Write the database design and the API design.",
+  "3. Build the software to match them: the backend in backend/ (API, database, migrations, seed data, tests) and the frontend in frontend/ (every screen, calling the real API, responsive).",
+  "4. Run it: the backend starts and its tests pass; the frontend builds and works against the backend. Each code folder's check must pass (see your deliverables). Fix what fails.",
+  "5. If the code had to differ from the design, update the design documents to match the code.",
+  "6. Write the implementation report with the real commands and results, then hand off.",
+].join("\n");
+
 export const MEMBER_PRESETS: MemberPreset[] = [
   {
     id: "product-analyst",
@@ -37,6 +47,14 @@ export const MEMBER_PRESETS: MemberPreset[] = [
     templates: ["api-spec", "db-design"],
   },
   {
+    id: "fullstack",
+    title: "Fullstack Engineer",
+    role: "fullstack",
+    runtime: "claude-code",
+    instructions: FULLSTACK_INSTRUCTIONS,
+    templates: ["db-design", "api-spec", "backend-code", "frontend-code", "implementation-report"],
+  },
+  {
     id: "qa",
     title: "QA Engineer",
     role: "qa",
@@ -54,8 +72,13 @@ export const MEMBER_PRESETS: MemberPreset[] = [
   },
 ];
 
+/** A preset's instructions, by id (templates reuse them). */
+function presetText(id: string): string {
+  return MEMBER_PRESETS.find((p) => p.id === id)?.instructions ?? "";
+}
+
 export function deliverableFromTemplate(t: DeliverableTemplate): FactoryDeliverable {
-  return { id: t.id, title: t.title, path: t.path, outline: t.outline, acceptance: t.acceptance };
+  return { id: t.id, title: t.title, path: t.path, outline: t.outline, acceptance: t.acceptance, ...(t.kind === "code" ? { kind: "code" as const, ...(t.check ? { check: t.check } : {}) } : {}) };
 }
 
 export function uniqueId(base: string, taken: Iterable<string>): string {
@@ -116,12 +139,28 @@ export interface TeamTemplate {
   /** One line for the gallery card. */
   bestFor: string;
   workflow: FactoryTeamInput["workflow"];
+  autonomy?: FactoryTeamInput["autonomy"];
   members: Array<{ id: string; title: string; role: string; runtime: FactoryMember["runtime"]; instructions: string; docs: TemplateDoc[] }>;
 }
 
 const doc = (id: string, title: string, path: string, outline: string, acceptance: string): FactoryDeliverable => ({ id, title, path, outline, acceptance });
 
 export const TEAM_TEMPLATES: TeamTemplate[] = [
+  {
+    id: "fullstack-product",
+    rigName: "fullstack-product",
+    title: "Full-stack Product Team",
+    summary: "Turns an idea into requirements, a design, working software (backend and frontend) and a tested result.",
+    bestFor: "Building a working app from an idea, with its documents",
+    workflow: "sequential",
+    autonomy: "full",
+    members: [
+      { id: "product-analyst", title: "Product Analyst", role: "product-analyst", runtime: "claude-code", instructions: presetText("product-analyst"), docs: ["prd"] },
+      { id: "architect", title: "Solution Architect", role: "architect", runtime: "claude-code", instructions: presetText("architect") + " Choose the tech stack and the folder layout (backend/, frontend/) the engineer will follow.", docs: ["system-design"] },
+      { id: "fullstack", title: "Fullstack Engineer", role: "fullstack", runtime: "claude-code", instructions: FULLSTACK_INSTRUCTIONS, docs: ["db-design", "api-spec", "backend-code", "frontend-code", "implementation-report"] },
+      { id: "qa", title: "QA Engineer", role: "qa", runtime: "claude-code", instructions: "Read every document and the implementation report. Start the real software the way the report says, test it against the requirements, and record each test case with its actual result (pass/fail) and the bugs you find.", docs: ["test-cases-xlsx"] },
+    ],
+  },
   {
     id: "product-docs",
     rigName: "product-docs",
@@ -130,10 +169,10 @@ export const TEAM_TEMPLATES: TeamTemplate[] = [
     bestFor: "Planning a new product or a big feature",
     workflow: "sequential",
     members: [
-      { id: "product-analyst", title: "Product Analyst", role: "product-analyst", runtime: "claude-code", instructions: MEMBER_PRESETS[0]!.instructions, docs: ["prd"] },
-      { id: "architect", title: "Solution Architect", role: "architect", runtime: "claude-code", instructions: MEMBER_PRESETS[1]!.instructions, docs: ["system-design"] },
-      { id: "backend", title: "Backend Engineer", role: "backend", runtime: "claude-code", instructions: MEMBER_PRESETS[2]!.instructions, docs: ["api-spec", "db-design"] },
-      { id: "qa", title: "QA Engineer", role: "qa", runtime: "claude-code", instructions: MEMBER_PRESETS[3]!.instructions, docs: ["test-plan"] },
+      { id: "product-analyst", title: "Product Analyst", role: "product-analyst", runtime: "claude-code", instructions: presetText("product-analyst"), docs: ["prd"] },
+      { id: "architect", title: "Solution Architect", role: "architect", runtime: "claude-code", instructions: presetText("architect"), docs: ["system-design"] },
+      { id: "backend", title: "Backend Engineer", role: "backend", runtime: "claude-code", instructions: presetText("backend"), docs: ["api-spec", "db-design"] },
+      { id: "qa", title: "QA Engineer", role: "qa", runtime: "claude-code", instructions: presetText("qa"), docs: ["test-plan"] },
     ],
   },
   {
@@ -195,6 +234,7 @@ export function teamFromTemplate(t: TeamTemplate, deliverableTemplates: Delivera
     title: t.title,
     summary: t.summary,
     workflow: t.workflow,
+    ...(t.autonomy ? { autonomy: t.autonomy } : {}),
     members: t.members.map((m) => ({
       id: m.id,
       title: m.title,

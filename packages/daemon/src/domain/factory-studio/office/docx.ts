@@ -42,6 +42,8 @@ export interface DocxBuildReport {
   changes: number;
   /** --style: how many top-level parts of the form's front pages were kept (cover, change log, TOC, …). */
   frontMatter: number;
+  /** What still looks wrong in the result: unfilled <fields>/{{placeholders}}, hint text, a heading twice. */
+  problems: string[];
 }
 
 export interface DocxInspection {
@@ -382,27 +384,66 @@ function isHeading(el: XmlElement, styles: StyleMap): boolean {
   return el.localName === "p" && /^heading [1-9]$/.test(styleNameOf(el, styles));
 }
 
+function headingKey(text: string): string {
+  return normKey(text.replace(TYPED_NUMBER, ""));
+}
+
 /**
- * Keeps the form's front pages (cover, change log, sign-off page, table of contents: everything before
- * its first heading) and drops the rest of its body, which the new content replaces. Notes for the
- * writer between the table of contents and the first heading are dropped too. Returns how many
- * top-level elements were kept (0: the form has no heading, so only its page setup is kept).
+ * Keeps the form's front pages (cover, change log, sign-off page, table of contents) and drops the rest of
+ * its body, which the new content replaces. Where the body starts, in order of preference:
+ *   1. the form's first paragraph in a Heading style;
+ *   2. the first paragraph (outside the table of contents) whose text is the draft's first heading;
+ *   3. right after the table of contents.
+ * Notes for the writer between the table of contents and the body are dropped too.
+ * Returns how many top-level elements were kept (0: no body start found, only the page setup is kept).
  */
-function keepFrontMatter(doc: XmlDocument, styles: StyleMap): number {
+function keepFrontMatter(doc: XmlDocument, styles: StyleMap, draftHeading: string | null): number {
   const body = elements(doc, "body")[0];
   if (!body) return 0;
   const all = children(body).filter((el) => el.localName !== "sectPr");
-  const first = all.findIndex((el) => isHeading(el, styles));
+  const isToc = (el: XmlElement) => el.localName === "p" && styleNameOf(el, styles).startsWith("toc");
+  let lastToc = -1;
+  all.forEach((el, i) => { if (isToc(el)) lastToc = i; });
+  let first = all.findIndex((el) => isHeading(el, styles));
+  if (first < 0 && draftHeading) {
+    const want = headingKey(draftHeading);
+    first = all.findIndex((el, i) => i > lastToc && el.localName === "p" && headingKey(paragraphText(el)) === want);
+  }
+  if (first < 0 && lastToc >= 0) first = lastToc + 1;
   const front = first < 0 ? [] : all.slice(0, first);
   for (const el of first < 0 ? all : all.slice(first)) body.removeChild(el);
-  let lastToc = -1;
-  front.forEach((el, i) => { if (el.localName === "p" && styleNameOf(el, styles).startsWith("toc")) lastToc = i; });
-  if (lastToc >= 0) {
-    for (const el of front.slice(lastToc + 1)) {
+  const tocInFront = front.reduce((acc, el, i) => (isToc(el) ? i : acc), -1);
+  if (tocInFront >= 0) {
+    for (const el of front.slice(tocInFront + 1)) {
       if (el.localName === "p" && paragraphText(el).trim() && !elements(el, "fldChar").length) body.removeChild(el);
     }
   }
   return front.length;
+}
+
+/** What still looks wrong in a built document: things left from the model, or the same heading twice. */
+function selfCheck(doc: XmlDocument, styles: StyleMap, partName: string): string[] {
+  const problems: string[] = [];
+  const where = partName === "word/document.xml" ? "" : ` (${partName.replace("word/", "").replace(".xml", "")})`;
+  for (const p of innermostParagraphs(doc)) {
+    if (styleNameOf(p, styles).startsWith("toc")) continue;
+    const text = paragraphText(p).trim();
+    if (!text) continue;
+    for (const m of text.matchAll(ANGLE)) problems.push(`unfilled field <${m[1]!.trim()}>${where}`);
+    for (const m of text.matchAll(PLACEHOLDER)) problems.push(`unfilled placeholder {{${m[1]}}}${where}`);
+    if (/^\[[^\]]{12,}/.test(text) || /^\[.*\]$/s.test(text) && text.length > 12) problems.push(`hint text from the model: "${text.slice(0, 70)}"`);
+  }
+  if (partName === "word/document.xml") {
+    const seen = new Map<string, number>();
+    for (const p of elements(doc, "p")) {
+      if (!/^heading 1$/.test(styleNameOf(p, styles))) continue;
+      const k = headingKey(paragraphText(p));
+      if (!k) continue;
+      seen.set(k, (seen.get(k) ?? 0) + 1);
+    }
+    for (const [k, n] of seen) if (n > 1) problems.push(`heading "${k}" appears ${n} times (model text left in, or a section written twice)`);
+  }
+  return [...new Set(problems)];
 }
 
 function hasTocField(doc: XmlDocument): boolean {
@@ -558,10 +599,23 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
   let contentPlaced = false;
   let changes = 0;
   const markdown = input.markdown?.trim() ? input.markdown : null;
-  const styleOnly = input.mode === "style" && !!input.template;
+  // Content into a form without a {{content}} spot replaces the form's body: never pile it under the
+  // form's own sample text, whichever flag the agent used.
+  let hasContentSpot = false;
+  if (input.template && markdown !== null && input.mode !== "style") {
+    const xml = await zip.file("word/document.xml")!.async("string");
+    hasContentSpot = innermostParagraphs(parseXml(xml)).some((p) => /\{\{\s*content\s*\}\}/.test(paragraphText(p)));
+  }
+  const styleOnly = !!input.template && markdown !== null && (input.mode === "style" || !hasContentSpot);
+  if (input.mode === "style" && !!input.template && markdown === null) throw new Error("--style needs the document's content: pass --content <draft.md>");
+  const draftHeading = (() => {
+    if (markdown === null) return null;
+    const h = parseMarkdown(markdown).find((b) => b.kind === "heading") as Extract<Block, { kind: "heading" }> | undefined;
+    return h ? h.inlines.map((r) => r.text).join("") : null;
+  })();
+  const problems: string[] = [];
   let frontMatter = 0;
   let tocKept = false;
-  if (styleOnly && markdown === null) throw new Error("--style needs the document's content: pass --content <draft.md>");
   let docRenderer: Renderer | null = null;
 
   for (const part of textParts(zip)) {
@@ -570,7 +624,7 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
     const renderer = new Renderer(styles, isBody);
     if (isBody) docRenderer = renderer;
     if (isBody && styleOnly) {
-      const kept = keepFrontMatter(doc, styles);
+      const kept = keepFrontMatter(doc, styles, draftHeading);
       frontMatter = kept;
       if (kept > 0 && hasTocField(doc)) tocKept = true;
     }
@@ -640,6 +694,7 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
         changes++;
       }
     }
+    if (input.template) problems.push(...selfCheck(doc, styles, part));
     zip.file(part, serialize(doc));
   }
 
@@ -671,6 +726,7 @@ export async function buildDocx(input: DocxBuildInput): Promise<{ buffer: Buffer
       missing: [...missing].sort(),
       unused: Object.keys(allVars).filter((k) => !k.startsWith("row:") && !seen.has(k) && !usedAngle.has(normKey(k.replace(/^<|>$/g, "")))).sort(),
       frontMatter,
+      problems: problems.slice(0, 30),
       changes,
     },
   };

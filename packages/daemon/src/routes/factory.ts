@@ -21,7 +21,7 @@ import { parseFactoryTeamInput } from "../domain/factory-studio/team.js";
 import { FactoryStoreError, FactoryTeamStore } from "../domain/factory-studio/team-store.js";
 import { FactoryRunStore } from "../domain/factory-studio/run-store.js";
 import { FactoryRunService, RunError, type Dispatch } from "../domain/factory-studio/run-service.js";
-import { checkFolder, createFolder, listFolders, readReadiness, registerDefaultPerson, type ShellLookup } from "../domain/factory-studio/readiness.js";
+import { checkFolder, createFolder, listFolders, readReadiness, registerDefaultPerson, type RigProbe, type ShellLookup } from "../domain/factory-studio/readiness.js";
 import { AgentApiSettingsError, clearAgentApiKey, readAgentApiSettings, saveAgentApiSettings, testAgentApi } from "../domain/agent-api-settings.js";
 import { OfficeTemplateError, OfficeTemplateStore, MAX_TEMPLATE_BYTES, officeTemplatesDir } from "../domain/factory-studio/office/office-templates.js";
 import { inspectDocx } from "../domain/factory-studio/office/docx.js";
@@ -41,7 +41,7 @@ export interface FactoryRoutesOpts {
   /** In-process call into the daemon's own /api routes (launch, send, down). Runs are disabled without it. */
   dispatch?: Dispatch;
   /** Test hooks for readiness: tool lookup and the OpenRig home the person is registered in. */
-  readiness?: { lookup?: ShellLookup; home?: string };
+  readiness?: { lookup?: ShellLookup; home?: string; rigProbe?: RigProbe };
   /** OpenRig home holding agent-api/ (tests). Default: $OPENRIG_HOME. */
   agentApiHome?: string;
   /** Test hook for the connection test. */
@@ -50,6 +50,8 @@ export interface FactoryRoutesOpts {
   officeTemplatesDir?: string;
   /** Test hooks for the launch wait. */
   runTiming?: { pollMs?: number; readyTimeoutMs?: number; sleep?: (ms: number) => Promise<void> };
+  /** Source-code checks: time limit, shell, auto-run on hand-off, quiet time before an auto-run. */
+  runChecks?: { timeoutMs?: number; shell?: string; auto?: boolean; quietMs?: number; maxParallel?: number };
 }
 
 const DEFAULT_SHARED_AGENT_DIR = nodePath.resolve(import.meta.dirname, "..", "..", "specs", "agents", "shared");
@@ -261,6 +263,7 @@ export function factoryRoutes(opts: FactoryRoutesOpts = {}): Hono {
         store: new FactoryRunStore(opts.runsRoot ?? nodePath.join(getDefaultOpenRigPath("factory"), "runs")),
         dispatch,
         teamDir: (name) => nodePath.join(teamsRoot(), name),
+        checks: opts.runChecks,
         readTeam: (name) => {
           try {
             return new FactoryTeamStore({ teamsRoot: teamsRoot(), sharedAgentDir, skillSource: null }).read(name);
@@ -339,6 +342,16 @@ export function factoryRoutes(opts: FactoryRoutesOpts = {}): Hono {
     return new Response(new Uint8Array(doc.content), { status: 200, headers });
   }));
 
+  // Source-code outputs: run the build/test check, list the folder, read one file.
+  router.post("/runs/:id/checks/:member/:deliverable", (c) => withRuns(c, (svc) =>
+    c.json(svc.checkNow(c.req.param("id"), c.req.param("member"), c.req.param("deliverable")), 202)));
+
+  router.get("/runs/:id/code/:member/:deliverable", (c) => withRuns(c, (svc) =>
+    c.json(svc.codeTree(c.req.param("id"), c.req.param("member"), c.req.param("deliverable")))));
+
+  router.get("/runs/:id/code/:member/:deliverable/file", (c) => withRuns(c, (svc) =>
+    c.json(svc.codeFile(c.req.param("id"), c.req.param("member"), c.req.param("deliverable"), c.req.query("path") ?? ""))));
+
   router.post("/runs/:id/review", (c) => withRuns(c, async (svc) => {
     const b = await body(c);
     return c.json(await svc.review(c.req.param("id"), {
@@ -364,7 +377,7 @@ export function factoryRoutes(opts: FactoryRoutesOpts = {}): Hono {
   //   POST /fs/folders {path}               create a new project folder inside home
   router.get("/readiness", async (c) => {
     if (!dispatch) return c.json({ error: "readiness_unavailable", message: "Readiness is not wired on this daemon" }, 503);
-    return c.json(await readReadiness({ dispatch, lookup: opts.readiness?.lookup, agentApiHome: opts.agentApiHome }));
+    return c.json(await readReadiness({ dispatch, lookup: opts.readiness?.lookup, rigProbe: opts.readiness?.rigProbe, agentApiHome: opts.agentApiHome }));
   });
   router.post("/readiness/person", async (c) => {
     const b = await body(c);
